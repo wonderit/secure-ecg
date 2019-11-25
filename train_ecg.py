@@ -39,8 +39,8 @@ workers = connect_to_workers(n_workers=2)
 crypto_provider = connect_to_crypto_provider()
 
 # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-n_train_items = 100
-n_test_items = 100
+n_train_items = 10
+n_test_items = 10
 
 
 DATAPATH = '/Users/wonsuk/projects/data/ecg/raw/2019-11-19'
@@ -241,19 +241,20 @@ def train(args, model, private_train_loader, optimizer, epoch):
 def test(args, model, private_test_loader):
     model.eval()
     test_loss = 0
-    correct = 0
+    # correct = 0
     with torch.no_grad():
         for data, target in private_test_loader:
             start_time = time.time()
 
             output = model(data)
-            pred = output.argmax(dim=1)
-            correct += pred.eq(target.view_as(pred)).sum()
+            # pred = output.argmax(dim=1)
+            # correct += pred.eq(target.view_as(pred)).sum()
+            test_loss += ((output - target) ** 2).sum().refresh() / args.test_batch_size
 
-    correct = correct.get().float_precision()
-    print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
-        correct.item(), len(private_test_loader) * args.test_batch_size,
-                        100. * correct.item() / (len(private_test_loader) * args.test_batch_size)))
+    test_loss = test_loss.get().float_precision()
+    # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
+    #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
+    print('\nTest set: Loss: avg MSE ({:.0f})\tTime: {:.3f}s'.format(test_loss / (len(private_test_loader) * args.test_batch_size), time.time() - start_time))
 
 model = Net()
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
