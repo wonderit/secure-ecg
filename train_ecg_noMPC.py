@@ -16,17 +16,16 @@ import time
 
 class Arguments():
     def __init__(self):
-        self.batch_size = 10
-        self.epochs = 2
-        self.lr = 5e-4  # 0.00002
+        self.batch_size = 20
+        self.epochs = 100
+        self.lr = 1e-6   # 0.00002
         self.seed = 1
         self.log_interval = 1 # Log info at each batch
         self.precision_fractional = 3
 
         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-        self.n_train_items = 300
-        self.n_test_items = 60
-        self.test_batch_size = 10
+        self.n_train_items = 1600
+        self.n_test_items = 400
 
 args = Arguments()
 
@@ -88,8 +87,17 @@ class ECGDataset(Dataset):
         y = self.target[index]
 
         if self.transform:
+            import matplotlib.pyplot as plt
+
             x = x.reshape([12, 5000])
-            x = x.reshape([12, 12//12, 250, 5000 // 250]).mean(3).mean(1)
+            s = x.reshape([12, 12//12, 250, 5000 // 250]).mean(3).mean(1)
+            # print('x', x.shape, x[0, :9])
+            # plt.plot(x[4, :])
+            # plt.show()
+            x = s
+            # print('s', s.shape, s[0, :3])
+            # plt.plot(s[4, :])
+            # plt.show()
             scaler = MinMaxScaler(feature_range=(-1, 1))
             x = scaler.fit_transform(x.numpy())
             x = torch.from_numpy(x)
@@ -99,13 +107,16 @@ class ECGDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
+
 print('Converting to TorchDataset...')
 
 x_all = []
 y_all = []
+# for 12 data
 for hdf_file in hdf5_files:
     f = h5py.File(hdf_file, 'r')
     y_all.append(f['continuous']['VentricularRate'][0] / 100)
+    # x = np.zeros(shape=(5000))
     x_list = list()
     for (i, key) in enumerate(ecg_key_string_list):
         x = f['ecg_rest'][key][:]
@@ -114,11 +125,44 @@ for hdf_file in hdf5_files:
     x_list = x_list.reshape(12, -1)
     x_all.append(x_list)
 
-data = ECGDataset(np.asarray(x_all), np.asarray(y_all), transform=True)
+# for 12 data
+# for hdf_file in hdf5_files:
+#     f = h5py.File(hdf_file, 'r')
+#     y_all.append(f['continuous']['VentricularRate'][0] / 100)
+#     x = np.zeros(shape=(12, 5000))
+#     for (i, key) in enumerate(ecg_key_string_list):
+#         x[i][:] = f['ecg_rest'][key][:]
+#     x_all.append(x)
+
+# for data only 1
+# for hdf_file in hdf5_files:
+#     f = h5py.File(hdf_file, 'r')
+#     y_all.append(f['continuous']['VentricularRate'][0])
+#     # x = np.zeros(shape=(5000))
+#     x_list = list()
+#     for (i, key) in enumerate(ecg_key_string_list):
+#
+#         x = f['ecg_rest'][key][:]
+#         x_list.append(x)
+#     x_list = np.stack(x_list)
+#     # x_list = x_list.reshape(12, -1)
+#     x_all.append(x_list)
+
+x = np.asarray(x_all)
+# x = x.reshape(-1, 1, 12, 5000)
+y = np.asarray(y_all)
+
+print(x.shape, y.shape)
+
+data = ECGDataset(x, y, transform=True)
+# data = ECGDataset(x, y, transform=False) # 4.58
+
+# train_size = int(TRAIN_RATIO * len(data))
+# test_size = len(data) - train_size
 
 train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False)
-test_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False)
+test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
 print('Torch Dataset Train/Test split finished...')
 
@@ -173,47 +217,52 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
     private_test_loader = [
         (secret_share(data), secret_share(target.float()))
         for i, (data, target) in enumerate(test_loader)
-        if i < args.n_test_items / args.test_batch_size
+        if i < n_test_items / args.batch_size
     ]
 
     return private_train_loader, private_test_loader
 
-
-private_train_loader, private_test_loader = get_private_data_loaders(
-    precision_fractional=args.precision_fractional,
-    workers=workers,
-    crypto_provider=crypto_provider
-)
+#
+# private_train_loader, private_test_loader = get_private_data_loaders(
+#     precision_fractional=args.precision_fractional,
+#     workers=workers,
+#     crypto_provider=crypto_provider
+# )
 
 print('Data Sharing complete')
+
+class CNN2D(nn.Module):
+    def __init__(self):
+        super(CNN2D, self).__init__()
+        self.cnn_layers = nn.Sequential(
+            # Defining a 2D convolution layer
+            nn.Conv2d(1, 4, kernel_size=(1, 10), stride=2, padding=1),
+            # nn.Conv2d(4, 4, kernel_size=(1, 10), stride=2, padding=1),
+            nn.MaxPool2d(kernel_size=2),
+            nn.ReLU(inplace=True),
+            # Defining another 2D convolution layer
+            nn.Conv2d(4, 4, kernel_size=(1, 5), stride=2, padding=1),
+            nn.MaxPool2d(kernel_size=2),
+            nn.ReLU(inplace=True),
+            # Defining another 2D convolution layer
+            nn.Conv2d(4, 4, kernel_size=(1, 5), stride=2, padding=1),
+            nn.MaxPool2d(kernel_size=2),
+            nn.ReLU(inplace=True),
+        )
+        self.linear_layers = nn.Sequential(
+            nn.Linear(77 * 4, 1),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        x = self.cnn_layers(x)
+        x = x.view(-1, 4 * 77)
+        x = self.linear_layers(x)
+        return x
 
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
-        # self.channel_size = 16
-        # self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=3, stride=1)
-        # self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=3, stride=1)
-        # self.conv3 = nn.Conv1d(self.channel_size, 1, kernel_size=1, stride=1)
-        # self.maxpool1 = nn.MaxPool1d(2)
-        self.fc1 = nn.Linear(250 * 12, 500)
-        self.fc2 = nn.Linear(500, 200)
-        self.fc3 = nn.Linear(200, 1)
-        # self.fc1 = nn.Linear(5620, 1)
-
-    def forward(self, x):
-        # x = x.float()
-        # x = F.relu(self.conv1(x))
-        # x = F.relu(self.conv2(x))
-        # x = F.relu(self.conv3(x))
-        x = x.view(-1, 12 * 250)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
         self.channel_size = 16
         self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=3, stride=1)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=3, stride=1)
@@ -229,16 +278,53 @@ class Net(nn.Module):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        print(x.shape)
-        x = x.view(-1, 246)
+        x = x.view(x.size(0), -1)
         # x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.kernal_size = 16
+        self.conv1 = nn.Conv1d(12, self.kernal_size, kernel_size=5, stride=2)
+        self.conv2 = nn.Conv1d(self.kernal_size, self.kernal_size, kernel_size=5, stride=2)
+        # self.conv1 = nn.Conv1d(12, self.kernal_size, kernel_size=101, stride=2)
+        # self.conv2 = nn.Conv1d(self.kernal_size, self.kernal_size, kernel_size=101, stride=2)
+        self.maxpool1 = nn.MaxPool1d(kernel_size=2)
+        self.conv3 = nn.Conv1d(self.kernal_size, self.kernal_size, kernel_size=51, stride=2)
+        self.conv4 = nn.Conv1d(self.kernal_size, 1, kernel_size=1)
+        self.fc1 = nn.Linear(562, 128)
+        self.fc2 = nn.Linear(60, 1)
+        # self.fc1 = nn.Linear(5620, 1)
+
+    def forward(self, x):
+        # x = x.view(-1, 600000)
+        x = F.relu(self.conv1(x.float()))
+        x = F.relu(self.conv2(x))
+        # x = self.maxpool1(x.float())
+        # x = F.relu(self.conv3(x))
+        # x = self.maxpool1(x.float())
+        # x = F.relu(self.conv3(x))
+        # x = self.maxpool1(x.float())
+        x = F.relu(self.conv4(x))
+        # x = x.view(-1, )
+        x = x.view(x.size(0), -1)
+        # x = x.view(-1, 562)
+        # x = F.relu(self.fc1(x))
+        # x = torch.sigmoid(self.fc2(x))
+        x = self.fc2(x)
+        # x = F.relu(self.fc1(x))
+        # x = F.sigmoid(self.fc2(x).float())
+        # x = F.relu(self.fc1(x))
+        # x = F.sigmoid(self.fc2(x))
+        return x
+
 def train(args, model, private_train_loader, optimizer, epoch):
     model.train()
-    for batch_idx, (data, target) in enumerate(private_train_loader):  # <-- now it is a private dataset
+    data_count = 0
+    for batch_idx, (data, target) in enumerate(train_loader):  # <-- now it is a private dataset
         start_time = time.time()
 
         optimizer.zero_grad()
@@ -247,14 +333,14 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
-        loss = ((output - target) ** 2).sum().refresh() / batch_size
+        loss = ((output - target) ** 2).sum() / batch_size
 
         loss.backward()
 
         optimizer.step()
 
         if batch_idx % args.log_interval == 0:
-            loss = loss.get().float_precision()
+            # loss = loss.get().float_precision()
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(
                 epoch, batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
                        100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
@@ -267,44 +353,38 @@ def test(args, model, private_test_loader, epoch):
     pred_list = []
     target_list = []
     with torch.no_grad():
-        for data, target in private_test_loader:
+        for data, target in test_loader:
             start_time = time.time()
 
             output = model(data)
-            # pred = output.argmax(dim=1)
-            # correct += pred.eq(target.view_as(pred)).sum()
-            # test_loss += ((output - target) ** 2).sum()
-            data_count += len(data)
-            pred_list.append(output.detach().clone().get().float_precision().numpy()[:, 0])
-            target_list.append(target.detach().clone().get().float_precision().numpy())
+            test_loss += ((output - target) ** 2).sum()
+            data_count += len(output)
+            pred_list.extend(output[:, 0].numpy())
+            target_list.extend(target.numpy())
+            # print('rmse:', torch.sqrt(((output - target) ** 2).sum() / args.batch_size))
+            # print('r2score:', r2_score(target_list, pred_list))
 
     # test_loss = test_loss.get().float_precision()
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
     #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
-    # print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
-
+    print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
     r_squared_mse(target_list, pred_list)
 
     if epoch == args.epochs:
         scatter_plot(target_list, pred_list)
 
-
 def scatter_plot(y_true, y_pred):
     import pandas as pd
     result = np.column_stack((y_true,y_pred))
-    pd.DataFrame(result).to_csv("secure-result/result_ep{}_bs{}_tr{}_test{}.csv".format(args.epochs,
+    pd.DataFrame(result).to_csv("result/result_ep{}_bs{}_tr{}_test{}.csv".format(args.epochs,
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
                                                                                  args.n_test_items), index=False)
 
     import matplotlib.pyplot as plt
     plt.scatter(y_true, y_pred)
-    plt.xlim(0.4, 0.9)
-    plt.ylim(0.4, 0.9)
-    plt.xlabel('y_true')
-    plt.ylabel('y_pred')
 
-    plt.savefig("secure-result/result_ep{}_bs{}_tr{}_test{}.png".format(args.epochs,
+    plt.savefig("result/result_ep{}_bs{}_tr{}_test{}.png".format(args.epochs,
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
                                                                                  args.n_test_items))
@@ -312,8 +392,12 @@ def scatter_plot(y_true, y_pred):
 
 
 def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
-    r2 = r2_score(y_true, y_pred, sample_weight=None, multioutput=None)
-    mse = mean_squared_error(y_true, y_pred, sample_weight=None, multioutput=None)
+
+    r2 = r2_score(y_true, y_pred,
+                  sample_weight=sample_weight, multioutput=multioutput)
+    mse = mean_squared_error(y_true, y_pred,
+                             sample_weight=sample_weight,
+                             multioutput=multioutput)
     # bounds_check = np.min(y_pred) > MIN_MOISTURE_BOUND
     # bounds_check = bounds_check&(np.max(y_pred) < MAX_MOISTURE_BOUND)
 
@@ -331,12 +415,21 @@ def save_model(model, path):
     torch.save(model.state_dict(), path)
 
 model = ANN()
-model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 
+print(model)
+# model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
+# for 12channel
+summary(model, input_size =(12, 250), batch_size=args.batch_size)
+
+# for 1 channel
+# summary(model, input_size =(1, 12, 5000), batch_size=args.batch_size)
+# exit()
 optimizer = optim.SGD(model.parameters(), lr=args.lr)
-optimizer = optimizer.fix_precision()
+# optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
+# optimizer = optimizer.fix_precision()
 
 for epoch in range(1, args.epochs + 1):
-    train(args, model, private_train_loader, optimizer, epoch)
-    test(args, model, private_test_loader, epoch)
-    # save_model(model, 'secure-models/model.h5')
+    train(args, model, train_loader, optimizer, epoch)
+    test(args, model, test_loader, epoch)
+    # Save model
+    save_model(model, 'models/CNN_250x12_lr01e5_epoch10.h5')
