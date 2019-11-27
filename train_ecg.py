@@ -16,17 +16,17 @@ import time
 
 class Arguments():
     def __init__(self):
-        self.batch_size = 10
+        self.batch_size = 20
+        self.test_batch_size = 20
         self.epochs = 2
-        self.lr = 5e-4  # 0.00002
-        self.seed = 1
-        self.log_interval = 1 # Log info at each batch
-        self.precision_fractional = 3
-
+        self.lr = 1e-3  # 0.00002
         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-        self.n_train_items = 300
-        self.n_test_items = 60
-        self.test_batch_size = 10
+        self.n_train_items = 20
+        self.n_test_items = 20
+
+        self.seed = 1
+        self.log_interval = 1  # Log info at each batch
+        self.precision_fractional = 3
 
 args = Arguments()
 
@@ -251,7 +251,8 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         loss.backward()
 
-        optimizer.step()
+        # optimizer.step()
+        step(optimizer)
 
         if batch_idx % args.log_interval == 0:
             loss = loss.get().float_precision()
@@ -283,6 +284,10 @@ def test(args, model, private_test_loader, epoch):
     #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
     # print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
 
+
+    target_list = np.array(target_list).reshape(-1, 1)
+    pred_list = np.array(pred_list).reshape(-1, 1)
+    print(target_list.shape, pred_list.shape)
     r_squared_mse(target_list, pred_list)
 
     if epoch == args.epochs:
@@ -292,10 +297,11 @@ def test(args, model, private_test_loader, epoch):
 def scatter_plot(y_true, y_pred):
     import pandas as pd
     result = np.column_stack((y_true,y_pred))
-    pd.DataFrame(result).to_csv("secure-result/result_ep{}_bs{}_tr{}_test{}.csv".format(args.epochs,
+    pd.DataFrame(result).to_csv("secure-result/result_ep{}_bs{}_tr{}_test{}_lr{}.csv".format(args.epochs,
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
-                                                                                 args.n_test_items), index=False)
+                                                                                 args.n_test_items,
+                                                                                             args.lr), index=False)
 
     import matplotlib.pyplot as plt
     plt.scatter(y_true, y_pred)
@@ -304,10 +310,11 @@ def scatter_plot(y_true, y_pred):
     plt.xlabel('y_true')
     plt.ylabel('y_pred')
 
-    plt.savefig("secure-result/result_ep{}_bs{}_tr{}_test{}.png".format(args.epochs,
+    plt.savefig("secure-result/result_ep{}_bs{}_tr{}_test{}_lr{}.png".format(args.epochs,
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
-                                                                                 args.n_test_items))
+                                                                                 args.n_test_items,
+                                                                                             args.lr))
     plt.show()
 
 
@@ -330,10 +337,79 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
+def step(opt, closure=None):
+    """Performs a single optimization step.
+
+    Arguments:
+        closure (callable, optional): A closure that reevaluates the model
+            and returns the loss.
+    """
+    loss = None
+    # if closure is not None:
+    #     loss = closure()
+
+    for group in opt.param_groups:
+        for p in group['params']:
+            if p.grad is None:
+                continue
+            grad = p.grad.data
+            # if grad.is_sparse:
+            #     raise RuntimeError('Adam does not support sparse gradients, please consider SparseAdam instead')
+            amsgrad = group['amsgrad']
+
+            state = opt.state[p]
+
+            # State initialization
+            if len(state) == 0:
+                state['step'] = 0
+                # Exponential moving average of gradient values
+                state['exp_avg'] = torch.zeros_like(p.data).float()
+                # Exponential moving average of squared gradient values
+                state['exp_avg_sq'] = torch.zeros_like(p.data).float()
+                if amsgrad:
+                    # Maintains max of all exp. moving avg. of sq. grad. values
+                    state['max_exp_avg_sq'] = torch.zeros_like(p.data)
+
+            exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
+            if amsgrad:
+                max_exp_avg_sq = state['max_exp_avg_sq']
+            beta1, beta2 = group['betas']
+
+            state['step'] += 1
+            bias_correction1 = 1 - beta1 ** state['step']
+            bias_correction2 = 1 - beta2 ** state['step']
+
+            if group['weight_decay'] != 0:
+                grad.add_(group['weight_decay'], p.data)
+
+            # Decay the first and second moment running average coefficient
+            exp_avg.mul_(beta1).add_(1 - beta1, grad)
+            exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)
+            if amsgrad:
+                # Maintains the maximum of all 2nd moment running avg. till now
+                torch.max(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
+                # Use the max. for normalizing running avg. of gradient
+                denom = (max_exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
+            else:
+                denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
+
+            step_size = group['lr'] / bias_correction1
+
+            print(-step_size)
+            print(exp_avg)
+            print(denom)
+            print(p.data)
+            # torch.addcdiv()
+            p.data.add_(-step_size.mul(exp_avg.div(denom)))
+            # p.data.addcdiv_(-step_size, exp_avg, denom)
+
+    return loss
+
+
 model = ANN()
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 
-optimizer = optim.SGD(model.parameters(), lr=args.lr)
+optimizer = optim.Adam(model.parameters(), lr=args.lr)
 optimizer = optimizer.fix_precision()
 
 for epoch in range(1, args.epochs + 1):
