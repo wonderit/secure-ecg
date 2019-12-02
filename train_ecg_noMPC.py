@@ -2,13 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from torchvision import datasets, transforms
+from torch.utils.data import Dataset
+from torchvision import transforms
 import glob
 import h5py
 import numpy as np
 from torchsummary import summary
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import r2_score, mean_squared_error
 import math
 
@@ -16,16 +15,16 @@ import time
 
 class Arguments():
     def __init__(self):
-        self.batch_size = 20
-        self.epochs = 100
-        self.lr = 1e-6   # 0.00002
-        self.seed = 1
-        self.log_interval = 1 # Log info at each batch
+        self.batch_size = 32
+        self.epochs = 20
+        self.lr = 1e-4   # 0.00002
+        self.seed = 1234
+        self.log_interval = 100 # Log info at each batch
         self.precision_fractional = 3
 
         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-        self.n_train_items = 1600
-        self.n_test_items = 400
+        self.n_train_items = 32000
+        self.n_test_items = 3200
 
 args = Arguments()
 
@@ -49,20 +48,20 @@ crypto_provider = connect_to_crypto_provider()
 DATAPATH = '/Users/wonsuk/projects/data/ecg/raw/2019-11-19'
 # DATA_LENGTH = 100
 # BATCH_SIZE = 10
-TRAIN_RATIO = 0.8
+# TRAIN_RATIO = 0.8
 ecg_key_string_list = [
     "strip_I",
     "strip_II",
     "strip_III",
+    "strip_aVR",
+    "strip_aVL",
+    "strip_aVF",
     "strip_V1",
     "strip_V2",
     "strip_V3",
     "strip_V4",
     "strip_V5",
     "strip_V6",
-    "strip_aVF",
-    "strip_aVL",
-    "strip_aVR"
 ]
 
 hdf5_files = []
@@ -87,36 +86,39 @@ class ECGDataset(Dataset):
         y = self.target[index]
 
         if self.transform:
-            import matplotlib.pyplot as plt
-
             x = x.reshape([12, 5000])
-            s = x.reshape([12, 12//12, 250, 5000 // 250]).mean(3).mean(1)
+            x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
             # print('x', x.shape, x[0, :9])
             # plt.plot(x[4, :])
             # plt.show()
-            x = s
-            # print('s', s.shape, s[0, :3])
-            # plt.plot(s[4, :])
+            # # x = s
+            # # print('s', s.shape, s[0, :3])
+            # plt.plot(x[4, :])
             # plt.show()
-            scaler = MinMaxScaler(feature_range=(-1, 1))
-            x = scaler.fit_transform(x.numpy())
-            x = torch.from_numpy(x)
+            # scaler = MinMaxScaler(feature_range=(-1, 1))
+            # x = scaler.fit_transform(x.numpy())
+            # x = torch.from_numpy(x)
+            # #
+            # # print('x', x.shape, x[0, :9])
+            #
+            #
+            # plt.plot(x[4, :])
+            # plt.show()
+
+            # exit()
 
         return x, y
 
     def __len__(self):
         return len(self.data)
 
-
 print('Converting to TorchDataset...')
 
 x_all = []
 y_all = []
-# for 12 data
 for hdf_file in hdf5_files:
     f = h5py.File(hdf_file, 'r')
-    y_all.append(f['continuous']['VentricularRate'][0] / 100)
-    # x = np.zeros(shape=(5000))
+    y_all.append(f['continuous']['VentricularRate'][0])
     x_list = list()
     for (i, key) in enumerate(ecg_key_string_list):
         x = f['ecg_rest'][key][:]
@@ -125,38 +127,30 @@ for hdf_file in hdf5_files:
     x_list = x_list.reshape(12, -1)
     x_all.append(x_list)
 
-# for 12 data
-# for hdf_file in hdf5_files:
-#     f = h5py.File(hdf_file, 'r')
-#     y_all.append(f['continuous']['VentricularRate'][0] / 100)
-#     x = np.zeros(shape=(12, 5000))
-#     for (i, key) in enumerate(ecg_key_string_list):
-#         x[i][:] = f['ecg_rest'][key][:]
-#     x_all.append(x)
-
-# for data only 1
-# for hdf_file in hdf5_files:
-#     f = h5py.File(hdf_file, 'r')
-#     y_all.append(f['continuous']['VentricularRate'][0])
-#     # x = np.zeros(shape=(5000))
-#     x_list = list()
-#     for (i, key) in enumerate(ecg_key_string_list):
-#
-#         x = f['ecg_rest'][key][:]
-#         x_list.append(x)
-#     x_list = np.stack(x_list)
-#     # x_list = x_list.reshape(12, -1)
-#     x_all.append(x_list)
-
 x = np.asarray(x_all)
-# x = x.reshape(-1, 1, 12, 5000)
 y = np.asarray(y_all)
 
 print(x.shape, y.shape)
 
+# print('x', x.shape, x[0, 0, :9])
+# plt.plot(x[4, 4, :])
+# plt.show()
+
+# scaler = NDStandardScaler()
+# x = scaler.fit_transform(x)
+# x = torch.from_numpy(x)
+
+
+# keepdims makes the result shape (1, 1, 3) instead of (3,). This doesn't matter here, but
+# would matter if you wanted to normalize over a different axis.
+
+# print('x', x.shape, x[0, 0, :9])
+# plt.plot(x[4, 4, :])
+# plt.show()
+
+
 data = ECGDataset(x, y, transform=True)
 # data = ECGDataset(x, y, transform=False) # 4.58
-
 # train_size = int(TRAIN_RATIO * len(data))
 # test_size = len(data) - train_size
 
@@ -217,7 +211,7 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
     private_test_loader = [
         (secret_share(data), secret_share(target.float()))
         for i, (data, target) in enumerate(test_loader)
-        if i < n_test_items / args.batch_size
+        if i < args.n_test_items / args.batch_size
     ]
 
     return private_train_loader, private_test_loader
@@ -321,10 +315,124 @@ class Net(nn.Module):
         # x = F.sigmoid(self.fc2(x))
         return x
 
+class ML4CVD_shallow(nn.Module):
+    def __init__(self):
+        super(ML4CVD_shallow, self).__init__()
+        self.kernel_size = 7
+        self.padding_size = 3
+        self.channel_size = 32
+        self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv4 = nn.Conv1d(self.channel_size * 3, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.conv5 = nn.Conv1d(24, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv6 = nn.Conv1d(48, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv7 = nn.Conv1d(72, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv8 = nn.Conv1d(16, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv9 = nn.Conv1d(32, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.fc1 = nn.Linear(2976, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+        # self.fc1 = nn.Linear(5620, 1)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x)) # 32
+        x = F.relu(self.conv2(x)) # 32
+        x = self.avgpool1(x) # 32
+        x1 = self.conv2(x)
+        y = torch.cat((x, x1), dim=1) # 64
+        x2 = self.conv3(y) # 32
+        y = torch.cat((y, x2), dim=1) # 96
+        # downsizing
+        y = self.conv4(y) # 24
+        y = self.avgpool1(y)
+
+        x3 = self.conv5(y)
+        y = torch.cat((y, x3), dim=1)
+        x4 = self.conv6(y)
+        y = torch.cat((y, x4), dim=1)
+
+        y = self.conv7(y)
+        y = self.avgpool1(y)
+
+        x5 = self.conv8(y)
+        y = torch.cat((y, x5), dim=1)
+        x6 = self.conv9(y)
+        y = torch.cat((y, x6), dim=1)
+
+        # Flatten
+        y = y.view(y.size(0), -1)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+
+        return y
+
+
+class ML4CVD(nn.Module):
+    def __init__(self):
+        super(ML4CVD, self).__init__()
+        self.kernel_size = 71
+        self.padding_size = 35
+        self.channel_size = 32
+        self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv4 = nn.Conv1d(self.channel_size * 3, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.conv5 = nn.Conv1d(24, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv6 = nn.Conv1d(48, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv7 = nn.Conv1d(72, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv8 = nn.Conv1d(16, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv9 = nn.Conv1d(32, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.fc1 = nn.Linear(30000, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+        # self.fc1 = nn.Linear(5620, 1)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x)) # 32
+        x = F.relu(self.conv2(x)) # 32
+        x = self.avgpool1(x) # 32
+        x1 = self.conv2(x)
+        y = torch.cat((x, x1), dim=1) # 64
+        x2 = self.conv3(y) # 32
+        y = torch.cat((y, x2), dim=1) # 96
+        # downsizing
+        y = self.conv4(y) # 24
+        y = self.avgpool1(y)
+
+        x3 = self.conv5(y)
+        y = torch.cat((y, x3), dim=1)
+        x4 = self.conv6(y)
+        y = torch.cat((y, x4), dim=1)
+
+        y = self.conv7(y)
+        y = self.avgpool1(y)
+
+        x5 = self.conv8(y)
+        y = torch.cat((y, x5), dim=1)
+        x6 = self.conv9(y)
+        y = torch.cat((y, x6), dim=1)
+
+        # Flatten
+        y = y.view(y.size(0), -1)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+
+        return y
+
 def train(args, model, private_train_loader, optimizer, epoch):
     model.train()
     data_count = 0
     for batch_idx, (data, target) in enumerate(train_loader):  # <-- now it is a private dataset
+        if target.min() < 25 or target.max() > 140:
+            pass
+
         start_time = time.time()
 
         optimizer.zero_grad()
@@ -376,14 +484,16 @@ def test(args, model, private_test_loader, epoch):
 def scatter_plot(y_true, y_pred):
     import pandas as pd
     result = np.column_stack((y_true,y_pred))
-    pd.DataFrame(result).to_csv("result/result_ep{}_bs{}_tr{}_test{}.csv".format(args.epochs,
+    pd.DataFrame(result).to_csv("result/result_ep{}_bs{}_tr{}_test{}_lr{}.csv".format(args.epochs,
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
-                                                                                 args.n_test_items), index=False)
+                                                                                 args.n_test_items,
+                                                                                             args.lr), index=False)
 
     import matplotlib.pyplot as plt
-    plt.scatter(y_true, y_pred)
-
+    plt.scatter(y_pred, y_true, s=3)
+    plt.xlabel('Predictions')
+    plt.ylabel('Actual')
     plt.savefig("result/result_ep{}_bs{}_tr{}_test{}.png".format(args.epochs,
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
@@ -393,8 +503,7 @@ def scatter_plot(y_true, y_pred):
 
 def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
 
-    r2 = r2_score(y_true, y_pred,
-                  sample_weight=sample_weight, multioutput=multioutput)
+    r2 = r2_score(y_true, y_pred, multioutput='uniform_average')
     mse = mean_squared_error(y_true, y_pred,
                              sample_weight=sample_weight,
                              multioutput=multioutput)
@@ -414,22 +523,28 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
-model = ANN()
+# model = ML4CVD()
+model = ML4CVD_shallow()
 
 print(model)
 # model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 # for 12channel
-summary(model, input_size =(12, 250), batch_size=args.batch_size)
+summary(model, input_size =(12, 500), batch_size=args.batch_size)
 
 # for 1 channel
 # summary(model, input_size =(1, 12, 5000), batch_size=args.batch_size)
 # exit()
-optimizer = optim.SGD(model.parameters(), lr=args.lr)
-# optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
+# optimizer = optim.SGD(model.parameters(), lr=args.lr)
+optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
 # optimizer = optimizer.fix_precision()
 
 for epoch in range(1, args.epochs + 1):
     train(args, model, train_loader, optimizer, epoch)
     test(args, model, test_loader, epoch)
     # Save model
-    save_model(model, 'models/CNN_250x12_lr01e5_epoch10.h5')
+    save_model(model, "models/ml4cvd_ep{}_bs{}_tr{}_test{}_lr{}.h5".format(args.epochs,
+                                                                                 args.batch_size,
+                                                                                 args.n_train_items,
+                                                                                 args.n_test_items,
+                                                                           args.lr
+                                                                           ))
