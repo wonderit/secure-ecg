@@ -18,3 +18,7 @@ gsutil -m cp -r gs://broad-cho-ukb/2019-11-19 ./data/raw/
 gsutil ls -L -b gs://broad-cho-ukb/2019-11-19/
 ```
 pip install --upgrade google-cloud-storage
+
+
+# keras setting
+brew install graphviz

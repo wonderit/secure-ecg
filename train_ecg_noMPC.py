@@ -16,15 +16,15 @@ import time
 class Arguments():
     def __init__(self):
         self.batch_size = 32
-        self.epochs = 20
+        self.epochs = 10
         self.lr = 1e-4   # 0.00002
         self.seed = 1234
-        self.log_interval = 100 # Log info at each batch
+        self.log_interval = 10  # Log info at each batch
         self.precision_fractional = 3
 
         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-        self.n_train_items = 32000
-        self.n_test_items = 3200
+        self.n_train_items = 18000
+        self.n_test_items = 2000
 
 args = Arguments()
 
@@ -225,96 +225,6 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
 
 print('Data Sharing complete')
 
-class CNN2D(nn.Module):
-    def __init__(self):
-        super(CNN2D, self).__init__()
-        self.cnn_layers = nn.Sequential(
-            # Defining a 2D convolution layer
-            nn.Conv2d(1, 4, kernel_size=(1, 10), stride=2, padding=1),
-            # nn.Conv2d(4, 4, kernel_size=(1, 10), stride=2, padding=1),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(inplace=True),
-            # Defining another 2D convolution layer
-            nn.Conv2d(4, 4, kernel_size=(1, 5), stride=2, padding=1),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(inplace=True),
-            # Defining another 2D convolution layer
-            nn.Conv2d(4, 4, kernel_size=(1, 5), stride=2, padding=1),
-            nn.MaxPool2d(kernel_size=2),
-            nn.ReLU(inplace=True),
-        )
-        self.linear_layers = nn.Sequential(
-            nn.Linear(77 * 4, 1),
-            # nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        x = self.cnn_layers(x)
-        x = x.view(-1, 4 * 77)
-        x = self.linear_layers(x)
-        return x
-
-class ANN(nn.Module):
-    def __init__(self):
-        super(ANN, self).__init__()
-        self.channel_size = 16
-        self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=3, stride=1)
-        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=3, stride=1)
-        self.conv3 = nn.Conv1d(self.channel_size, 1, kernel_size=1, stride=1)
-        self.maxpool1 = nn.MaxPool1d(2)
-        self.fc1 = nn.Linear(928, 200)
-        self.fc2 = nn.Linear(246, 128)
-        self.fc3 = nn.Linear(128, 1)
-        # self.fc1 = nn.Linear(5620, 1)
-
-    def forward(self, x):
-        # x = x.float()
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = x.view(x.size(0), -1)
-        # x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.kernal_size = 16
-        self.conv1 = nn.Conv1d(12, self.kernal_size, kernel_size=5, stride=2)
-        self.conv2 = nn.Conv1d(self.kernal_size, self.kernal_size, kernel_size=5, stride=2)
-        # self.conv1 = nn.Conv1d(12, self.kernal_size, kernel_size=101, stride=2)
-        # self.conv2 = nn.Conv1d(self.kernal_size, self.kernal_size, kernel_size=101, stride=2)
-        self.maxpool1 = nn.MaxPool1d(kernel_size=2)
-        self.conv3 = nn.Conv1d(self.kernal_size, self.kernal_size, kernel_size=51, stride=2)
-        self.conv4 = nn.Conv1d(self.kernal_size, 1, kernel_size=1)
-        self.fc1 = nn.Linear(562, 128)
-        self.fc2 = nn.Linear(60, 1)
-        # self.fc1 = nn.Linear(5620, 1)
-
-    def forward(self, x):
-        # x = x.view(-1, 600000)
-        x = F.relu(self.conv1(x.float()))
-        x = F.relu(self.conv2(x))
-        # x = self.maxpool1(x.float())
-        # x = F.relu(self.conv3(x))
-        # x = self.maxpool1(x.float())
-        # x = F.relu(self.conv3(x))
-        # x = self.maxpool1(x.float())
-        x = F.relu(self.conv4(x))
-        # x = x.view(-1, )
-        x = x.view(x.size(0), -1)
-        # x = x.view(-1, 562)
-        # x = F.relu(self.fc1(x))
-        # x = torch.sigmoid(self.fc2(x))
-        x = self.fc2(x)
-        # x = F.relu(self.fc1(x))
-        # x = F.sigmoid(self.fc2(x).float())
-        # x = F.relu(self.fc1(x))
-        # x = F.sigmoid(self.fc2(x))
-        return x
-
 class ML4CVD_shallow(nn.Module):
     def __init__(self):
         super(ML4CVD_shallow, self).__init__()
@@ -340,26 +250,26 @@ class ML4CVD_shallow(nn.Module):
         x = F.relu(self.conv1(x)) # 32
         x = F.relu(self.conv2(x)) # 32
         x = self.avgpool1(x) # 32
-        x1 = self.conv2(x)
-        y = torch.cat((x, x1), dim=1) # 64
-        x2 = self.conv3(y) # 32
-        y = torch.cat((y, x2), dim=1) # 96
+        x1 = F.relu(self.conv2(x))
+        c1 = torch.cat((x, x1), dim=1) # 64
+        x2 = F.relu(self.conv3(c1)) # 32
+        y = torch.cat((x, x1, x2), dim=1) # 96
         # downsizing
-        y = self.conv4(y) # 24
+        y = F.relu(self.conv4(y)) # 24
         y = self.avgpool1(y)
 
-        x3 = self.conv5(y)
-        y = torch.cat((y, x3), dim=1)
-        x4 = self.conv6(y)
-        y = torch.cat((y, x4), dim=1)
+        x3 = F.relu(self.conv5(y))
+        c2 = torch.cat((y, x3), dim=1)
+        x4 = F.relu(self.conv6(c2))
+        y = torch.cat((y, x3, x4), dim=1)
 
-        y = self.conv7(y)
+        y = F.relu(self.conv7(y))
         y = self.avgpool1(y)
 
-        x5 = self.conv8(y)
-        y = torch.cat((y, x5), dim=1)
-        x6 = self.conv9(y)
-        y = torch.cat((y, x6), dim=1)
+        x5 = F.relu(self.conv8(y))
+        c3 = torch.cat((y, x5), dim=1)
+        x6 = F.relu(self.conv9(c3))
+        y = torch.cat((y, x5, x6), dim=1)
 
         # Flatten
         y = y.view(y.size(0), -1)
@@ -430,12 +340,13 @@ def train(args, model, private_train_loader, optimizer, epoch):
     model.train()
     data_count = 0
     for batch_idx, (data, target) in enumerate(train_loader):  # <-- now it is a private dataset
-        if target.min() < 25 or target.max() > 140:
-            pass
+        # if target.min() < 25 or target.max() > 140:
+        #     continue
 
         start_time = time.time()
 
         optimizer.zero_grad()
+
 
         output = model(data)
 
@@ -488,16 +399,17 @@ def scatter_plot(y_true, y_pred):
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
                                                                                  args.n_test_items,
-                                                                                             args.lr), index=False)
+                                                                                 args.lr), index=False)
 
     import matplotlib.pyplot as plt
     plt.scatter(y_pred, y_true, s=3)
     plt.xlabel('Predictions')
     plt.ylabel('Actual')
-    plt.savefig("result/result_ep{}_bs{}_tr{}_test{}.png".format(args.epochs,
+    plt.savefig("result/result_ep{}_bs{}_tr{}_test{}_lr{}.png".format(args.epochs,
                                                                                  args.batch_size,
                                                                                  args.n_train_items,
-                                                                                 args.n_test_items))
+                                                                                 args.n_test_items,
+                                                                                 args.lr))
     plt.show()
 
 
@@ -515,7 +427,8 @@ def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
     print('Scoring - min', np.min(y_true), np.min(y_pred))
     print('Scoring - max', np.max(y_true), np.max(y_pred))
     print('Scoring - mean', np.mean(y_true), np.mean(y_pred))
-    print('Scoring - MSE: ', mse, 'RMSE: ', math.sqrt(mse), 'R2 : ', r2)
+    print('Scoring - MSE: ', mse, 'RMSE: ', math.sqrt(mse))
+    print('Scoring - R2: ', r2)
     # print(y_pred)
     # exit()
 
