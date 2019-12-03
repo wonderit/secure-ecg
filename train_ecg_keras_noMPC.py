@@ -24,38 +24,40 @@ def r2_keras(y_true, y_pred):
 
 def create_model(model_type, input_shape, loss_function):
     print('input_shape', input_shape)
-    print('model_type', model_type)
     if model_type.startswith('cnn'):
-        data_input = Input(shape=(500, 12))
+        data_input = Input(shape=(input_shape[1], input_shape[2]))
+        kernel_size = 7
+        if input_shape[1] > 500:
+            kernel_size = 71
         # Conv Block 1
-        x = Conv1D(filters=32, kernel_size=7, padding='same', activation='relu')(data_input)
-        x = Conv1D(filters=32, kernel_size=7, padding='same', activation='relu')(x)
+        x = Conv1D(filters=32, kernel_size=kernel_size, padding='same', activation='relu')(data_input)
+        x = Conv1D(filters=32, kernel_size=kernel_size, padding='same', activation='relu')(x)
         x = AveragePooling1D(pool_size=2, strides=2)(x)
 
         # residual block 1
-        x1 = Conv1D(filters=32, kernel_size=7, padding='same', activation='relu')(x)
+        x1 = Conv1D(filters=32, kernel_size=kernel_size, padding='same', activation='relu')(x)
         c1 = concatenate([x, x1])
-        x2 = Conv1D(filters=32, kernel_size=7, padding='same', activation='relu')(c1)
+        x2 = Conv1D(filters=32, kernel_size=kernel_size, padding='same', activation='relu')(c1)
         x = concatenate([x, x1, x2])
 
         # Conv Block 2
-        x = Conv1D(filters=24, kernel_size=7, padding='same', activation='relu')(x)
+        x = Conv1D(filters=24, kernel_size=kernel_size, padding='same', activation='relu')(x)
         x = AveragePooling1D(pool_size=2, strides=2)(x)
 
         # residual block 2
-        x1 = Conv1D(filters=24, kernel_size=7, padding='same', activation='relu')(x)
+        x1 = Conv1D(filters=24, kernel_size=kernel_size, padding='same', activation='relu')(x)
         c1 = concatenate([x, x1])
-        x2 = Conv1D(filters=24, kernel_size=7, padding='same', activation='relu')(c1)
+        x2 = Conv1D(filters=24, kernel_size=kernel_size, padding='same', activation='relu')(c1)
         x = concatenate([x, x1, x2])
 
         # Conv Block 3
-        x = Conv1D(filters=16, kernel_size=7, padding='same', activation='relu')(x)
+        x = Conv1D(filters=16, kernel_size=kernel_size, padding='same', activation='relu')(x)
         x = AveragePooling1D(pool_size=2, strides=2)(x)
 
         # residual block 3
-        x1 = Conv1D(filters=16, kernel_size=7, padding='same', activation='relu')(x)
+        x1 = Conv1D(filters=16, kernel_size=kernel_size, padding='same', activation='relu')(x)
         c1 = concatenate([x, x1])
-        x2 = Conv1D(filters=16, kernel_size=7, padding='same', activation='relu')(c1)
+        x2 = Conv1D(filters=16, kernel_size=kernel_size, padding='same', activation='relu')(c1)
         x = concatenate([x, x1, x2])
 
         # Flatten
@@ -125,7 +127,7 @@ def test(y_true, y_pred, model):
     plt.xlabel('Predictions')
     plt.ylabel('Actual')
     plt.savefig(model_export_path_template.format(model_export_path_folder, 'png'))
-    plt.show()
+    # plt.show()
 
 
 if __name__ == '__main__':
@@ -148,7 +150,7 @@ if __name__ == '__main__':
     if args.width > 500:
         print('Custom width :', args.width)
 
-    DATAPATH = '/Users/wonsuk/projects/data/ecg/raw/2019-11-19'
+    DATAPATH = '~/projects/data/ecg/raw/2019-11-19'
     # DATA_LENGTH = 100
     # BATCH_SIZE = 10
     # TRAIN_RATIO = 0.8
@@ -190,6 +192,8 @@ if __name__ == '__main__':
 
         if args.width < 5000:
             x_list = x_list.reshape([args.width, 5000 // args.width, 12, 12 // 12]).mean(3).mean(1)
+        else:
+            x_list = x_list.reshape([5000, 12])
         x_all.append(x_list)
 
     x = np.asarray(x_all)
@@ -227,7 +231,6 @@ if __name__ == '__main__':
     plt.title('Model - Loss')
     plt.legend(['Training', 'Validation'], loc='upper right')
     plt.plot(history.history['loss'])
-    # plt.plot(history.history['val_loss'])
     train_progress_figure_path_folder = 'result/train_progress_paper'
     if not os.path.exists(train_progress_figure_path_folder):
         os.makedirs(train_progress_figure_path_folder)

@@ -23,8 +23,8 @@ class Arguments():
         self.precision_fractional = 3
 
         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-        self.n_train_items = 18000
-        self.n_test_items = 2000
+        self.n_train_items = 100
+        self.n_test_items = 200
 
 args = Arguments()
 
@@ -45,7 +45,7 @@ workers = connect_to_workers(n_workers=2)
 crypto_provider = connect_to_crypto_provider()
 
 
-DATAPATH = '/Users/wonsuk/projects/data/ecg/raw/2019-11-19'
+DATAPATH = '~/projects/data/ecg/raw/2019-11-19'
 # DATA_LENGTH = 100
 # BATCH_SIZE = 10
 # TRAIN_RATIO = 0.8
@@ -149,8 +149,8 @@ print(x.shape, y.shape)
 # plt.show()
 
 
-data = ECGDataset(x, y, transform=True)
-# data = ECGDataset(x, y, transform=False) # 4.58
+# data = ECGDataset(x, y, transform=True)
+data = ECGDataset(x, y, transform=False) # 4.58
 # train_size = int(TRAIN_RATIO * len(data))
 # test_size = len(data) - train_size
 
@@ -306,26 +306,26 @@ class ML4CVD(nn.Module):
         x = F.relu(self.conv1(x)) # 32
         x = F.relu(self.conv2(x)) # 32
         x = self.avgpool1(x) # 32
-        x1 = self.conv2(x)
-        y = torch.cat((x, x1), dim=1) # 64
-        x2 = self.conv3(y) # 32
-        y = torch.cat((y, x2), dim=1) # 96
+        x1 = F.relu(self.conv2(x))
+        c1 = torch.cat((x, x1), dim=1) # 64
+        x2 = F.relu(self.conv3(c1)) # 32
+        y = torch.cat((x, x1, x2), dim=1) # 96
         # downsizing
-        y = self.conv4(y) # 24
+        y = F.relu(self.conv4(y)) # 24
         y = self.avgpool1(y)
 
-        x3 = self.conv5(y)
-        y = torch.cat((y, x3), dim=1)
-        x4 = self.conv6(y)
-        y = torch.cat((y, x4), dim=1)
+        x3 = F.relu(self.conv5(y))
+        c2 = torch.cat((y, x3), dim=1)
+        x4 = F.relu(self.conv6(c2))
+        y = torch.cat((y, x3, x4), dim=1)
 
-        y = self.conv7(y)
+        y = F.relu(self.conv7(y))
         y = self.avgpool1(y)
 
-        x5 = self.conv8(y)
-        y = torch.cat((y, x5), dim=1)
-        x6 = self.conv9(y)
-        y = torch.cat((y, x6), dim=1)
+        x5 = F.relu(self.conv8(y))
+        c3 = torch.cat((y, x5), dim=1)
+        x6 = F.relu(self.conv9(c3))
+        y = torch.cat((y, x5, x6), dim=1)
 
         # Flatten
         y = y.view(y.size(0), -1)
@@ -410,7 +410,7 @@ def scatter_plot(y_true, y_pred):
                                                                                  args.n_train_items,
                                                                                  args.n_test_items,
                                                                                  args.lr))
-    plt.show()
+    # plt.show()
 
 
 def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
@@ -436,8 +436,8 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
-# model = ML4CVD()
-model = ML4CVD_shallow()
+model = ML4CVD()
+# model = ML4CVD_shallow()
 
 print(model)
 # model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
