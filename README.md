@@ -15,13 +15,11 @@ gsutil -m cp -r gs://broad-cho-ukb/2019-11-19 ./data/raw/
 
 ```shell script
 
-cd /tmp
-
-curl -O https://repo.anaconda.com/archive/Anaconda3-5.2.0-Linux-x86_64.sh
+curl -O https://repo.anaconda.com/archive/Anaconda3-2019.10-Linux-x86_64.sh
 sha256sum Anaconda3-2019.10-Linux-x86_64.sh
 bash Anaconda3-2019.10-Linux-x86_64.sh
 
-conda create -n ecg python=3
+conda create -n ecg python=3.7
 conda activate ecg
 pip install -r requirements.txt
 ```

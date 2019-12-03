@@ -106,4 +106,3 @@ Werkzeug==0.16.0
 widgetsnbextension==3.5.1
 wrapt==1.11.2
 zipp==0.6.0
-zstd==1.4.4.0
