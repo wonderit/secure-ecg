@@ -1,0 +1,1 @@
+conda activate ecg && nohup train_ecg_keras_noMPC.py -w 5000 -tr 300 -te 30 -e 10 &
