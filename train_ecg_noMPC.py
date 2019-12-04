@@ -11,38 +11,51 @@ from torchsummary import summary
 from sklearn.metrics import r2_score, mean_squared_error
 import math
 
+import argparse
 import time
+#
+# class Arguments():
+#     def __init__(self):
+#         self.batch_size = 32
+#         self.epochs = 1
+#         self.lr = 1e-4   # 0.00002
+#         self.seed = 1234
+#         self.log_interval = 1  # Log info at each batch
+#         self.precision_fractional = 3
+#
+#         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
+#         self.n_train_items = 300
+#         self.n_test_items = 30
+#
+# args = Arguments()
 
-class Arguments():
-    def __init__(self):
-        self.batch_size = 32
-        self.epochs = 1
-        self.lr = 1e-4   # 0.00002
-        self.seed = 1234
-        self.log_interval = 1  # Log info at each batch
-        self.precision_fractional = 3
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
+parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-4)
+parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
+parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
+parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
+parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
 
-        # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-        self.n_train_items = 300
-        self.n_test_items = 30
-
-args = Arguments()
+args = parser.parse_args()
 
 _ = torch.manual_seed(args.seed)
-import syft as sy  # import the Pysyft library
-hook = sy.TorchHook(torch)  # hook PyTorch to add extra functionalities like Federated and Encrypted Learning
-
-# simulation functions
-def connect_to_workers(n_workers):
-    return [
-        sy.VirtualWorker(hook, id=f"worker{i+1}")
-        for i in range(n_workers)
-    ]
-def connect_to_crypto_provider():
-    return sy.VirtualWorker(hook, id="crypto_provider")
-
-workers = connect_to_workers(n_workers=2)
-crypto_provider = connect_to_crypto_provider()
+# import syft as sy  # import the Pysyft library
+# hook = sy.TorchHook(torch)  # hook PyTorch to add extra functionalities like Federated and Encrypted Learning
+#
+# # simulation functions
+# def connect_to_workers(n_workers):
+#     return [
+#         sy.VirtualWorker(hook, id=f"worker{i+1}")
+#         for i in range(n_workers)
+#     ]
+# def connect_to_crypto_provider():
+#     return sy.VirtualWorker(hook, id="crypto_provider")
+#
+# workers = connect_to_workers(n_workers=2)
+# crypto_provider = connect_to_crypto_provider()
 
 
 DATAPATH = '../data/ecg/raw/2019-11-19'
@@ -148,9 +161,10 @@ print(x.shape, y.shape)
 # plt.plot(x[4, 4, :])
 # plt.show()
 
-
-# data = ECGDataset(x, y, transform=True)
-data = ECGDataset(x, y, transform=False) # 4.58
+if args.compressed:
+    data = ECGDataset(x, y, transform=True)
+else:
+    data = ECGDataset(x, y, transform=False) # 4.58
 # train_size = int(TRAIN_RATIO * len(data))
 # test_size = len(data) - train_size
 
@@ -436,13 +450,17 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
-model = ML4CVD()
-#model = ML4CVD_shallow()
+if args.compressed:
+    model = ML4CVD_shallow()
+    summary(model, input_size=(12, 500), batch_size=args.batch_size)
+else:
+    model = ML4CVD()
+    summary(model, input_size=(12, 5000), batch_size=args.batch_size)
 
 print(model)
+
 # model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 # for 12channel
-summary(model, input_size =(12, 5000), batch_size=args.batch_size)
 
 # for 1 channel
 # summary(model, input_size =(1, 12, 5000), batch_size=args.batch_size)

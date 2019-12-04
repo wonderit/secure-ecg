@@ -15,6 +15,9 @@ import glob
 import h5py
 import os
 
+import syft as sy
+import tensorflow as tf
+
 
 def r2_keras(y_true, y_pred):
     SS_res = K.sum(K.square(y_true - y_pred))
@@ -80,7 +83,7 @@ def create_model(model_type, input_shape, loss_function):
 def save(model):
     # serialize model to JSON
     model_json = model.to_json()
-    model_export_path_folder = 'models_keras/{}_{}_{}_{}'.format(args.model, args.n_train_items + args.n_test_items,
+    model_export_path_folder = 'models_syft_keras/{}_{}_{}_{}'.format(args.model, args.n_train_items + args.n_test_items,
                                                                  args.batch_size, args.epochs)
     if not os.path.exists(model_export_path_folder):
         os.makedirs(model_export_path_folder)
@@ -113,7 +116,7 @@ def test(y_true, y_pred, model):
     print('Scoring - MSE: ', mse, 'RMSE: ', np.sqrt(mse))
     print('Scoring - R2: ', r2)
 
-    model_export_path_folder = 'models_keras/{}_{}_{}_{}'.format(args.model, args.n_train_items + args.n_test_items,
+    model_export_path_folder = 'models_syft_keras/{}_{}_{}_{}'.format(args.model, args.n_train_items + args.n_test_items,
                                                                  args.batch_size, args.epochs)
     if not os.path.exists(model_export_path_folder):
         os.makedirs(model_export_path_folder)
@@ -208,7 +211,22 @@ if __name__ == '__main__':
 
     # print(x_train.shape, x_test.shape)
     # print(y_train.shape, y_test.shape)
-    print('Data Splitting... finsihed')
+    print('Data Splitting... finished')
+
+
+    # Encrypted computation in Pysyft
+    hook = sy.KerasHook(tf.keras)
+
+    AUTO = True
+
+    alice = sy.TFEWorker(host='localhost:4000', auto_managed=AUTO)
+    bob = sy.TFEWorker(host='localhost:4001', auto_managed=AUTO)
+    crypto_provider = sy.TFEWorker(host='localhost:4002', auto_managed=AUTO)
+
+
+
+    # cluster = sy.TFECluster(alice, bob, crypto_provider)
+    # cluster.start()
 
     model = create_model(args.model, x_train.shape, 'mse')
 
@@ -231,7 +249,7 @@ if __name__ == '__main__':
     plt.title('Model - Loss')
     plt.legend(['Training', 'Validation'], loc='upper right')
     plt.plot(history.history['loss'])
-    train_progress_figure_path_folder = 'result/train_progress_paper'
+    train_progress_figure_path_folder = 'result_syft/train_progress_paper'
     if not os.path.exists(train_progress_figure_path_folder):
         os.makedirs(train_progress_figure_path_folder)
     plt.savefig('{}/{}_{}_{}_{}.png'.format(train_progress_figure_path_folder,
