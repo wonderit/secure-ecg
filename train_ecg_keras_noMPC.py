@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from keras.layers.convolutional import Conv1D, AveragePooling1D
 from keras.layers import Dense, Flatten, concatenate
 from keras.models import Sequential, Model, Input
