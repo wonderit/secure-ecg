@@ -19,12 +19,12 @@ class Arguments():
         self.epochs = 1
         self.lr = 1e-4   # 0.00002
         self.seed = 1234
-        self.log_interval = 10  # Log info at each batch
+        self.log_interval = 1  # Log info at each batch
         self.precision_fractional = 3
 
         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-        self.n_train_items = 100
-        self.n_test_items = 20
+        self.n_train_items = 300
+        self.n_test_items = 30
 
 args = Arguments()
 
@@ -45,7 +45,7 @@ workers = connect_to_workers(n_workers=2)
 crypto_provider = connect_to_crypto_provider()
 
 
-DATAPATH = '/home/wonsuk/projects/data/ecg/raw/2019-11-19'
+DATAPATH = '../data/ecg/raw/2019-11-19'
 # DATA_LENGTH = 100
 # BATCH_SIZE = 10
 # TRAIN_RATIO = 0.8
