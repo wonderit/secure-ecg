@@ -17,6 +17,22 @@ import argparse
 import time
 import pandas as pd
 import matplotlib.pyplot as plt
+from google.cloud import storage
+
+
+# Instantiates a client
+storage_client = storage.Client.from_service_account_json('key/broad-cho-priv-62f21dce2b4c.json')
+
+# The name for the new bucket
+bucket_name = 'broad-cho-ukb'
+
+# Creates the new bucket
+bucket = storage_client.get_bucket(bucket_name)
+
+
+
+print('Bucket {} fetched.'.format(bucket.name))
+exit()
 #
 # class Arguments():
 #     def __init__(self):
@@ -77,6 +93,9 @@ result_path = 'result_torch/{}_ep{}_bs{}_{}:{}_lr{}'.format(
 
 
 DATAPATH = '../data/ecg/raw/2019-11-19'
+# DATA_LENGTH = 100
+# BATCH_SIZE = 10
+# TRAIN_RATIO = 0.8
 ecg_key_string_list = [
     "strip_I",
     "strip_II",
