@@ -1,0 +1,47 @@
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 1: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 2: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 3: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 4: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+from: can't read /var/mail/torch.utils.data
+from: can't read /var/mail/torchvision
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 7: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 8: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 9: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+from: can't read /var/mail/torchsummary
+from: can't read /var/mail/sklearn.metrics
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 12: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 14: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 16: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: Syntax error: "(" unexpected
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 1: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 2: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 3: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 4: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+from: can't read /var/mail/torch.utils.data
+from: can't read /var/mail/torchvision
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 7: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 8: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 9: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+from: can't read /var/mail/torchsummary
+from: can't read /var/mail/sklearn.metrics
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 12: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 14: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: import: not found
+/home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: 16: /home/wonsuk/projects/secure-ecg/train_ecg_noMPC.py: Syntax error: "(" unexpected
+
+CommandNotFoundError: Your shell has not been properly configured to use 'conda activate'.
+To initialize your shell, run
+
+    $ conda init <SHELL_NAME>
+
+Currently supported shells are:
+  - bash
+  - fish
+  - tcsh
+  - xonsh
+  - zsh
+  - powershell
+
+See 'conda init --help' for more information and options.
+
+IMPORTANT: You may need to close and restart your shell after running 'conda init'.
+
+

@@ -16,7 +16,7 @@ import time
 class Arguments():
     def __init__(self):
         self.batch_size = 32
-        self.epochs = 10
+        self.epochs = 1
         self.lr = 1e-4   # 0.00002
         self.seed = 1234
         self.log_interval = 10  # Log info at each batch
@@ -24,7 +24,7 @@ class Arguments():
 
         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
         self.n_train_items = 100
-        self.n_test_items = 200
+        self.n_test_items = 20
 
 args = Arguments()
 
@@ -45,7 +45,7 @@ workers = connect_to_workers(n_workers=2)
 crypto_provider = connect_to_crypto_provider()
 
 
-DATAPATH = '~/projects/data/ecg/raw/2019-11-19'
+DATAPATH = '/home/wonsuk/projects/data/ecg/raw/2019-11-19'
 # DATA_LENGTH = 100
 # BATCH_SIZE = 10
 # TRAIN_RATIO = 0.8
@@ -437,12 +437,12 @@ def save_model(model, path):
     torch.save(model.state_dict(), path)
 
 model = ML4CVD()
-# model = ML4CVD_shallow()
+#model = ML4CVD_shallow()
 
 print(model)
 # model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 # for 12channel
-summary(model, input_size =(12, 500), batch_size=args.batch_size)
+summary(model, input_size =(12, 5000), batch_size=args.batch_size)
 
 # for 1 channel
 # summary(model, input_size =(1, 12, 5000), batch_size=args.batch_size)

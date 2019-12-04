@@ -150,7 +150,7 @@ if __name__ == '__main__':
     if args.width > 500:
         print('Custom width :', args.width)
 
-    DATAPATH = '~/projects/data/ecg/raw/2019-11-19'
+    DATAPATH = '../data/ecg/raw/2019-11-19'
     # DATA_LENGTH = 100
     # BATCH_SIZE = 10
     # TRAIN_RATIO = 0.8
