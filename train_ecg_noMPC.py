@@ -12,9 +12,11 @@ import numpy as np
 from torchsummary import summary
 from sklearn.metrics import r2_score, mean_squared_error
 import math
-
+import os
 import argparse
 import time
+import pandas as pd
+import matplotlib.pyplot as plt
 #
 # class Arguments():
 #     def __init__(self):
@@ -44,6 +46,20 @@ parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, 
 args = parser.parse_args()
 
 _ = torch.manual_seed(args.seed)
+
+model_type = 'original'
+if args.compressed:
+    model_type = 'compressed'
+
+result_path = 'result_torch/{}_ep{}_bs{}_{}:{}_lr{}'.format(
+    model_type,
+    args.epochs,
+    args.batch_size,
+    args.n_train_items,
+    args.n_test_items,
+    args.lr
+)
+
 # import syft as sy  # import the Pysyft library
 # hook = sy.TorchHook(torch)  # hook PyTorch to add extra functionalities like Federated and Encrypted Learning
 #
@@ -403,29 +419,31 @@ def test(args, model, private_test_loader, epoch):
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
     #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
     print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
-    r_squared_mse(target_list, pred_list)
 
-    if epoch == args.epochs:
-        scatter_plot(target_list, pred_list)
+    rm = r_squared_mse(target_list, pred_list)
 
-def scatter_plot(y_true, y_pred):
-    import pandas as pd
+    if epoch % args.log_interval == 0:
+        scatter_plot(target_list, pred_list, epoch, rm)
+    # if epoch == args.epochs:
+
+
+def scatter_plot(y_true, y_pred, epoch, message):
     result = np.column_stack((y_true,y_pred))
-    pd.DataFrame(result).to_csv("result/result_ep{}_bs{}_tr{}_test{}_lr{}.csv".format(args.epochs,
-                                                                                 args.batch_size,
-                                                                                 args.n_train_items,
-                                                                                 args.n_test_items,
-                                                                                 args.lr), index=False)
 
-    import matplotlib.pyplot as plt
+    if not os.path.exists('{}/{}'.format(result_path, 'csv')):
+        os.makedirs('{}/{}'.format(result_path, 'csv'))
+
+    if not os.path.exists('{}/{}'.format(result_path, 'scatter')):
+        os.makedirs('{}/{}'.format(result_path, 'scatter'))
+
+    pd.DataFrame(result).to_csv("{}/csv/{}.csv".format(result_path, epoch), index=False)
+
     plt.scatter(y_pred, y_true, s=3)
+    plt.suptitle(message)
     plt.xlabel('Predictions')
     plt.ylabel('Actual')
-    plt.savefig("result/result_ep{}_bs{}_tr{}_test{}_lr{}.png".format(args.epochs,
-                                                                                 args.batch_size,
-                                                                                 args.n_train_items,
-                                                                                 args.n_test_items,
-                                                                                 args.lr))
+    plt.savefig("{}/scatter/{}.png".format(result_path, epoch))
+    plt.clf()
     # plt.show()
 
 
@@ -447,6 +465,9 @@ def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
     print('Scoring - R2: ', r2)
     # print(y_pred)
     # exit()
+
+    result_message = 'r2:{:.3f}, mse:{:.3f}, std:{:.3f},{:.3f}'.format(r2, mse, np.std(y_true), np.std(y_pred))
+    return result_message
 
 def save_model(model, path):
 
@@ -475,9 +496,7 @@ for epoch in range(1, args.epochs + 1):
     train(args, model, train_loader, optimizer, epoch)
     test(args, model, test_loader, epoch)
     # Save model
-    save_model(model, "models/ml4cvd_ep{}_bs{}_tr{}_test{}_lr{}.h5".format(args.epochs,
-                                                                                 args.batch_size,
-                                                                                 args.n_train_items,
-                                                                                 args.n_test_items,
-                                                                           args.lr
-                                                                           ))
+    if not os.path.exists('{}/{}'.format(result_path, 'models')):
+        os.makedirs('{}/{}'.format(result_path, 'models'))
+    if epoch % args.log_interval == 0:
+        save_model(model, "{}/models/ep{}.h5".format(result_path, epoch))
