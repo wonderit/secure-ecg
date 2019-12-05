@@ -102,6 +102,16 @@ for f in glob.glob("{}/*.hd5".format(DATAPATH)):
 
 print('Data Loading finished (row:{})'.format(len(hdf5_files)))
 
+MEAN = 59.3
+STD = 10.6
+EPS = 1e-7
+
+def rescale(arr):
+    arr = arr * STD
+    arr = arr + MEAN
+
+    return arr
+
 
 class ECGDataset(Dataset):
     def __init__(self, data, target, transform=None):
@@ -115,7 +125,13 @@ class ECGDataset(Dataset):
 
         if self.transform:
             x = x.reshape([12, 5000])
-            x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
+
+            # x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
+            #
+            # TMAPS['ventricular-rate'] = TensorMap('VentricularRate', group='continuous',
+            #                                       channel_map={'VentricularRate': 0},
+            #                                       loss='logcosh', normalization={'mean': 59.3, 'std': 10.6})
+            y = (y - MEAN) / (STD + EPS)
             # print('x', x.shape, x[0, :9])
             # plt.plot(x[4, :])
             # plt.show()
@@ -179,7 +195,7 @@ print(x.shape, y.shape)
 if args.compressed:
     data = ECGDataset(x, y, transform=True)
 else:
-    data = ECGDataset(x, y, transform=False) # 4.58
+    data = ECGDataset(x, y, transform=True) # 4.58
 # train_size = int(TRAIN_RATIO * len(data))
 # test_size = len(data) - train_size
 
@@ -376,7 +392,6 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         optimizer.zero_grad()
 
-
         output = model(data)
 
         # loss = F.nll_loss(output, target)  <-- not possible here
@@ -406,6 +421,11 @@ def test(args, model, private_test_loader, epoch):
             start_time = time.time()
 
             output = model(data)
+
+            # output rescale
+            output = rescale(output)
+            target = rescale(target)
+
             test_loss += ((output - target) ** 2).sum()
             data_count += len(output)
             pred_list.extend(output[:, 0].numpy())
