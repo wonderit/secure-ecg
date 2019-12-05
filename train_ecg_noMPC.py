@@ -381,7 +381,8 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
-        loss = ((output - target) ** 2).sum() / batch_size
+        loss = torch.log(torch.cosh(output - target)).sum() / batch_size
+        # loss = ((output - target) ** 2).sum() / batch_size
 
         loss.backward()
 
