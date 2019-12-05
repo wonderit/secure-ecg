@@ -17,6 +17,16 @@ import glob
 import h5py
 import os
 
+def scale(arr, std, mean):
+    arr -= mean
+    arr /= (std + 1e-7)
+    return arr
+
+def rescale(arr, std, mean):
+    arr = arr * std
+    arr = arr + mean
+
+    return arr
 
 def r2_keras(y_true, y_pred):
     SS_res = K.sum(K.square(y_true - y_pred))
@@ -68,7 +78,8 @@ def create_model(model_type, input_shape, loss_function):
         x = Dense(64, activation='relu')(x)
         y = Dense(1)(x)
         model = Model(inputs=data_input, outputs=y)
-        model.compile(loss=losses.mean_squared_error, optimizer=Adam(lr=args.learning_rate), metrics=[r2_keras])
+        model.compile(loss=losses.logcosh, optimizer=Adam(lr=args.learning_rate), metrics=[r2_keras])
+        # model.compile(loss=losses.mean_squared_error, optimizer=Adam(lr=args.learning_rate), metrics=[r2_keras])
     else:
         model = Sequential()
         model.add(Dense(512, activation='relu', input_dim=input_shape))
@@ -138,7 +149,7 @@ if __name__ == '__main__':
     parser.add_argument("-w", "--width", help="Compress ecg data by width", type=int, default=500)
     parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
     parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
-    parser.add_argument("-lr", "--learning_rate", help="Set learning rate", type=float, default=1e-4)
+    parser.add_argument("-lr", "--learning_rate", help="Set learning rate", type=float, default=2e-4)
     parser.add_argument("-lf", "--loss_function", help="Select model type.", default="mse")
     parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
     parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
@@ -156,6 +167,9 @@ if __name__ == '__main__':
     # DATA_LENGTH = 100
     # BATCH_SIZE = 10
     # TRAIN_RATIO = 0.8
+
+    MEAN = 59.3
+    STD = 10.6
     ecg_key_string_list = [
         "strip_I",
         "strip_II",
@@ -203,6 +217,8 @@ if __name__ == '__main__':
 
     # print(x.shape, y.shape)
 
+    y = scale(y, MEAN, STD)
+
     print('Data Loading... Finished.')
     print('Data Splitting...')
 
@@ -224,6 +240,9 @@ if __name__ == '__main__':
     save(model)
 
     y_pred = model.predict(x_test)
+
+    y_test = rescale(y_test, MEAN, STD)
+    y_pred = rescale(y_pred, MEAN, STD)
     test(y_test, y_pred, model)
 
     # Loss

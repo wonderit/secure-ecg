@@ -42,9 +42,12 @@ parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=12
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
+# parser.add_argument("--mean", help="Set mean", type=float, default=59.3)
+# parser.add_argument("--std", help="Set std", type=float, default=10.6)
 
 args = parser.parse_args()
-
+MEAN = 59.3
+STD = 10.6
 _ = torch.manual_seed(args.seed)
 
 model_type = 'original'
@@ -102,15 +105,40 @@ for f in glob.glob("{}/*.hd5".format(DATAPATH)):
 
 print('Data Loading finished (row:{})'.format(len(hdf5_files)))
 
-MEAN = 59.3
-STD = 10.6
-EPS = 1e-7
+def scale(arr, std, mean):
+    arr -= mean
+    arr /= (std + 1e-7)
+    return arr
 
-def rescale(arr):
-    arr = arr * STD
-    arr = arr + MEAN
+def rescale(arr, std, mean):
+    arr = arr * std
+    arr = arr + mean
 
     return arr
+
+
+
+print('Converting to TorchDataset...')
+
+x_all = []
+y_all = []
+for hdf_file in hdf5_files:
+    f = h5py.File(hdf_file, 'r')
+    y_all.append(f['continuous']['VentricularRate'][0])
+    x_list = list()
+    for (i, key) in enumerate(ecg_key_string_list):
+        x = f['ecg_rest'][key][:]
+        x_list.append(x)
+    x_list = np.stack(x_list)
+    x_list = x_list.reshape(12, -1)
+    x_all.append(x_list)
+
+x = np.asarray(x_all)
+y = np.asarray(y_all)
+
+print(x.shape, y.shape)
+
+y = scale(y, MEAN, STD)
 
 
 class ECGDataset(Dataset):
@@ -122,16 +150,14 @@ class ECGDataset(Dataset):
     def __getitem__(self, index):
         x = self.data[index]
         y = self.target[index]
+        #
+        # TMAPS['ventricular-rate'] = TensorMap('VentricularRate', group='continuous',
+        #                                       channel_map={'VentricularRate': 0},
+        #                                       loss='logcosh', normalization={'mean': 59.3, 'std': 10.6})
 
         if self.transform:
             x = x.reshape([12, 5000])
-
-            # x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
-            #
-            # TMAPS['ventricular-rate'] = TensorMap('VentricularRate', group='continuous',
-            #                                       channel_map={'VentricularRate': 0},
-            #                                       loss='logcosh', normalization={'mean': 59.3, 'std': 10.6})
-            y = (y - MEAN) / (STD + EPS)
+            x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
             # print('x', x.shape, x[0, :9])
             # plt.plot(x[4, :])
             # plt.show()
@@ -155,27 +181,6 @@ class ECGDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
-
-print('Converting to TorchDataset...')
-
-x_all = []
-y_all = []
-for hdf_file in hdf5_files:
-    f = h5py.File(hdf_file, 'r')
-    y_all.append(f['continuous']['VentricularRate'][0])
-    x_list = list()
-    for (i, key) in enumerate(ecg_key_string_list):
-        x = f['ecg_rest'][key][:]
-        x_list.append(x)
-    x_list = np.stack(x_list)
-    x_list = x_list.reshape(12, -1)
-    x_all.append(x_list)
-
-x = np.asarray(x_all)
-y = np.asarray(y_all)
-
-print(x.shape, y.shape)
-
 # print('x', x.shape, x[0, 0, :9])
 # plt.plot(x[4, 4, :])
 # plt.show()
@@ -195,7 +200,7 @@ print(x.shape, y.shape)
 if args.compressed:
     data = ECGDataset(x, y, transform=True)
 else:
-    data = ECGDataset(x, y, transform=True) # 4.58
+    data = ECGDataset(x, y, transform=False) # 4.58
 # train_size = int(TRAIN_RATIO * len(data))
 # test_size = len(data) - train_size
 
@@ -384,7 +389,7 @@ class ML4CVD(nn.Module):
 def train(args, model, private_train_loader, optimizer, epoch):
     model.train()
     data_count = 0
-    for batch_idx, (data, target) in enumerate(train_loader):  # <-- now it is a private dataset
+    for batch_idx, (data, target) in enumerate(private_train_loader):  # <-- now it is a private dataset
         # if target.min() < 25 or target.max() > 140:
         #     continue
 
@@ -396,8 +401,8 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
-        loss = torch.log(torch.cosh(output - target)).sum() / batch_size
-        # loss = ((output - target) ** 2).sum() / batch_size
+        # loss = torch.log(torch.cosh(output - target)).sum() / batch_size
+        loss = ((output - target) ** 2).sum() / batch_size
 
         loss.backward()
 
@@ -417,14 +422,14 @@ def test(args, model, private_test_loader, epoch):
     pred_list = []
     target_list = []
     with torch.no_grad():
-        for data, target in test_loader:
+        for data, target in private_test_loader:
             start_time = time.time()
 
             output = model(data)
 
             # output rescale
-            output = rescale(output)
-            target = rescale(target)
+            output = rescale(output, MEAN, STD)
+            target = rescale(target, MEAN, STD)
 
             test_loss += ((output - target) ** 2).sum()
             data_count += len(output)
