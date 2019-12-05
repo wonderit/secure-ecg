@@ -1,0 +1,1 @@
+nohup /home/wonsuk/projects/secure-ecg/train_ecg.py -tr 1000 -te 100 > mpc_output.log &
