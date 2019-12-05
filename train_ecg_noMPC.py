@@ -35,6 +35,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
+parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
 parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=2e-4)
@@ -524,8 +525,10 @@ print(model)
 # for 1 channel
 # summary(model, input_size =(1, 12, 5000), batch_size=args.batch_size)
 # exit()
-# optimizer = optim.SGD(model.parameters(), lr=args.lr)
-optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
+if args.sgd:
+    optimizer = optim.SGD(model.parameters(), lr=args.lr)
+else:
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
 # optimizer = optimizer.fix_precision()
 
 for epoch in range(1, args.epochs + 1):

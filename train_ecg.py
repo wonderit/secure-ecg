@@ -38,14 +38,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
 parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-4)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=2e-4)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
+parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=3)
 
 args = parser.parse_args()
-
+MEAN = 59.3
+STD = 10.6
 _ = torch.manual_seed(args.seed)
 
 model_type = 'original'
@@ -102,6 +104,16 @@ for f in glob.glob("{}/*.hd5".format(DATAPATH)):
 
 print('Data Loading finished (row:{})'.format(len(hdf5_files)))
 
+def scale(arr, std, mean):
+    arr -= mean
+    arr /= (std + 1e-7)
+    return arr
+
+def rescale(arr, std, mean):
+    arr = arr * std
+    arr = arr + mean
+
+    return arr
 
 class ECGDataset(Dataset):
     def __init__(self, data, target, transform=None):
@@ -337,6 +349,10 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
+        # Reshape
+        output = output.view(-1, 1)
+        target = target.view(-1, 1)
+
         loss = ((output - target) ** 2).sum().refresh() / batch_size
 
         loss.backward()
@@ -362,6 +378,10 @@ def test(args, model, private_test_loader, epoch):
             start_time = time.time()
 
             output = model(data)
+
+            # output rescale
+            output = rescale(output, MEAN, STD)
+            target = rescale(target, MEAN, STD)
             # pred = output.argmax(dim=1)
             # correct += pred.eq(target.view_as(pred)).sum()
             # test_loss += ((output - target) ** 2).sum()
@@ -507,7 +527,8 @@ else:
 
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr)
+optimizer = optim.SGD(model.parameters(), lr=args.lr)
+# optimizer = optim.Adam(model.parameters(), lr=args.lr)
 optimizer = optimizer.fix_precision()
 
 for epoch in range(1, args.epochs + 1):
