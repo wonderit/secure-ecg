@@ -401,7 +401,18 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
-        # loss = torch.log(torch.cosh(output - target)).sum() / batch_size
+
+        # Reshape
+        output = output.view(-1, 1)
+        target = target.view(-1, 1)
+
+        # r2 : 0.67 with smooth l1 loss
+        # loss = F.smooth_l1_loss(output, target).sum() / batch_size
+
+        # r2 : 0.7  with logcosh loss
+        # loss = (torch.log(torch.cosh(output - target))).sum() / batch_size
+
+        # r2 : 0.646 w mse loss
         loss = ((output - target) ** 2).sum() / batch_size
 
         loss.backward()
@@ -432,6 +443,8 @@ def test(args, model, private_test_loader, epoch):
             target = rescale(target, MEAN, STD)
 
             test_loss += ((output - target) ** 2).sum()
+            # test_loss += torch.log(torch.cosh(output - target)).sum()
+
             data_count += len(output)
             pred_list.extend(output[:, 0].numpy())
             target_list.extend(target.numpy())
