@@ -295,7 +295,7 @@ class ANN(nn.Module):
         self.fc3 = nn.Linear(64, 1)
 
     def forward(self, x):
-        x = x.view(-1, 12 * 500)
+        x = x.view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -605,8 +605,6 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
-# if args.compressed:
-
 if args.model_type in ['shallow', 'ann']:
 
     if args.model_type == 'shallow':
@@ -617,8 +615,6 @@ if args.model_type in ['shallow', 'ann']:
 else:
     model = ML4CVD()
     summary(model, input_size=(12, 5000), batch_size=args.batch_size)
-
-
 
 print(model)
 
@@ -631,6 +627,7 @@ print(model)
 if args.sgd:
     optimizer = optim.SGD(model.parameters(), lr=args.lr)
 else:
+    print('its adam')
     optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
 # optimizer = optimizer.fix_precision()
 

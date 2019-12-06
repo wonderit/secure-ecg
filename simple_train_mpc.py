@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
+parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc)", type=str, default='shallow')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
@@ -38,16 +39,16 @@ MEAN = 59.3
 STD = 10.6
 _ = torch.manual_seed(args.seed)
 
-model_type = 'original'
-if args.compressed:
-    model_type = 'comp'
+# model_type = 'original'
+# if args.compressed:
+#     model_type = 'comp'
 
 loss_type = 'adam'
 if args.sgd:
     loss_type = 'sgd'
 
 result_path = 'secure-result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}'.format(
-    model_type,
+    args.model_type,
     loss_type,
     args.epochs,
     args.batch_size,
@@ -121,9 +122,9 @@ class ECGDataset(Dataset):
         x = self.data[index]
         y = self.target[index]
 
-        if self.transform:
-            x = x.reshape([12, 5000])
-            x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
+        # if self.transform:
+        #     x = x.reshape([12, 5000])
+        #     x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
         return x, y
 
     def __len__(self):
@@ -142,18 +143,37 @@ for hdf_file in hdf5_files:
         x_list.append(x)
     x_list = np.stack(x_list)
     x_list = x_list.reshape(12, -1)
-    x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
+    if args.model_type in ['shallow', 'ann']:
+        x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
     x_all.append(x_list)
 
 x = np.asarray(x_all)
 y = np.asarray(y_all)
 
-
-print(x.shape)
+print(x.shape, y.shape)
 
 y = scale(y, MEAN, STD)
 
 
+
+class ANN2(nn.Module):
+    def __init__(self):
+        super(ANN2, self).__init__()
+        # self.fc1 = nn.Linear(12 * 500, 128)
+        self.rnn = nn.RNN(500, 20, 3)
+        # self.fc1 = nn.Linear(60, 128)
+        self.fc1 = nn.Linear(240, 16)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(16, 1)
+
+    def forward(self, x):
+        # x = x.view(-1, 3 * 500)
+        output, hidden = self.rnn(x, torch.zeros(3, 12, 20))
+        x = output.view(output.shape[0], -1)
+        x = F.relu(self.fc1(x))
+        # x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 class CNN_forMPC(nn.Module):
     def __init__(self):
@@ -333,6 +353,21 @@ class ML4CVD(nn.Module):
 
         return y
 
+
+class ANN(nn.Module):
+    def __init__(self):
+        super(ANN, self).__init__()
+        self.fc1 = nn.Linear(12 * 500, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = x.view(-1, 12 * 500)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
 def train(args, model, private_train_loader, optimizer, epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(private_train_loader):  # <-- now it is a private dataset
@@ -345,8 +380,8 @@ def train(args, model, private_train_loader, optimizer, epoch):
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
         # Reshape
-        output = output.view(-1, 1)
-        target = target.view(-1, 1)
+        output = output.view(-1)
+        target = target.view(-1)
 
         loss = ((output - target) ** 2).sum().refresh() / batch_size
         # loss = ((output - target) ** 2).sum() / batch_size
@@ -388,15 +423,16 @@ def test(args, model, private_test_loader, epoch):
     # print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
 
 
-    target_list = np.array(target_list).reshape(-1, 1)
-    pred_list = np.array(pred_list).reshape(-1, 1)
-    print(target_list, pred_list)
+    target_list = np.array(target_list).reshape(-1)
+    pred_list = np.array(pred_list).reshape(-1)
+    print(target_list.shape, pred_list.shape)
+    print('example before rescale', target_list[0], pred_list[0])
 
     # output rescale
     target_list = rescale(target_list, MEAN, STD)
     pred_list = rescale(pred_list, MEAN, STD)
 
-    print(target_list, pred_list)
+    print('example after rescale', target_list[0], pred_list[0])
 
     rm = r_squared_mse(target_list, pred_list)
 
@@ -526,12 +562,12 @@ def step(opt, closure=None):
     return loss
 
 
-if args.compressed:
+if args.model_type in ['shallow', 'ann']:
 
-    if args.mpc:
+    if args.model_type == 'shallow':
         model = CNN_forMPC()
     else:
-        model = ML4CVD_shallow()
+        model = ANN2()
     summary(model, input_size=(12, 500), batch_size=args.batch_size)
 else:
     model = ML4CVD()
@@ -566,7 +602,7 @@ model = model.fix_precision().share(bob, alice, crypto_provider=james, requires_
 
 opt = optim.SGD(params=model.parameters(),lr=0.1).fix_precision()
 
-for iter in range(5):
+for iter in range(args.epochs):
     # 1) erase previous gradients (if they exist)
     opt.zero_grad()
 
@@ -574,8 +610,8 @@ for iter in range(5):
     pred = model(data)
 
     # Reshape
-    pred = pred.view(-1, 1)
-    target = target.view(-1, 1)
+    pred = pred.view(-1)
+    target = target.view(-1)
 
     # 3) calculate how much we missed
     loss = ((pred - target)**2).sum()
@@ -588,5 +624,5 @@ for iter in range(5):
 
     # 6) print our progress
     print('loss' , loss.get().float_precision())
-    print('pred : ', pred.detach().clone().get().float_precision())
-    print('target: ', target.detach().clone().get().float_precision())
+    print('pred : ', rescale(pred.detach().clone().get().float_precision(), STD, MEAN))
+    print('target: ', rescale(target.detach().clone().get().float_precision(), STD, MEAN))

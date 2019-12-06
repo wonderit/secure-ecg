@@ -4,13 +4,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from torchvision import datasets, transforms
+from torch.utils.data import Dataset
+from torchvision import transforms
 import glob
 import h5py
 import numpy as np
 from torchsummary import summary
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import r2_score, mean_squared_error
 import math
 import os
@@ -36,6 +35,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
+parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc)", type=str, default='shallow')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
@@ -52,16 +52,16 @@ MEAN = 59.3
 STD = 10.6
 _ = torch.manual_seed(args.seed)
 
-model_type = 'original'
-if args.compressed:
-    model_type = 'comp'
+# model_type = 'original'
+# if args.compressed:
+#     model_type = 'comp'
 
 loss_type = 'adam'
 if args.sgd:
     loss_type = 'sgd'
 
 result_path = 'secure-result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}'.format(
-    model_type,
+    args.model_type,
     loss_type,
     args.epochs,
     args.batch_size,
@@ -132,9 +132,9 @@ class ECGDataset(Dataset):
         x = self.data[index]
         y = self.target[index]
 
-        if self.transform:
-            x = x.reshape([12, 5000])
-            x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
+        # if self.transform:
+        #     x = x.reshape([12, 5000])
+        #     x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
         return x, y
 
     def __len__(self):
@@ -153,18 +153,18 @@ for hdf_file in hdf5_files:
         x_list.append(x)
     x_list = np.stack(x_list)
     x_list = x_list.reshape(12, -1)
+    if args.model_type in ['shallow', 'ann']:
+        x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
     x_all.append(x_list)
 
 x = np.asarray(x_all)
 y = np.asarray(y_all)
 
+print(x.shape, y.shape)
 
 y = scale(y, MEAN, STD)
 
-if args.compressed:
-    data = ECGDataset(x, y, transform=True)
-else:
-    data = ECGDataset(x, y, transform=False) # 4.58
+data = ECGDataset(x, y, transform=False)
 
 train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False)
@@ -359,6 +359,20 @@ class ML4CVD_shallow(nn.Module):
 
         return y
 
+class ANN(nn.Module):
+    def __init__(self):
+        super(ANN, self).__init__()
+        self.fc1 = nn.Linear(12 * 500, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = x.view(-1, 12 * 500)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
 class ML4CVD(nn.Module):
     def __init__(self):
         super(ML4CVD, self).__init__()
@@ -428,8 +442,8 @@ def train(args, model, private_train_loader, optimizer, epoch):
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
         # Reshape
-        output = output.view(-1, 1)
-        target = target.view(-1, 1)
+        output = output.view(-1)
+        target = target.view(-1)
 
         loss = ((output - target) ** 2).sum().refresh() / batch_size
         # loss = ((output - target) ** 2).sum() / batch_size
@@ -471,8 +485,9 @@ def test(args, model, private_test_loader, epoch):
     # print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
 
 
-    target_list = np.array(target_list).reshape(-1, 1)
-    pred_list = np.array(pred_list).reshape(-1, 1)
+    target_list = np.array(target_list).reshape(-1)
+    pred_list = np.array(pred_list).reshape(-1)
+    print(target_list.shape, pred_list.shape)
     print('example before rescale', target_list[0], pred_list[0])
 
     # output rescale
@@ -609,12 +624,12 @@ def step(opt, closure=None):
     return loss
 
 
-if args.compressed:
+if args.model_type in ['shallow', 'ann']:
 
-    if args.mpc:
+    if args.model_type == 'shallow':
         model = CNN_forMPC()
     else:
-        model = ML4CVD_shallow()
+        model = ANN()
     summary(model, input_size=(12, 500), batch_size=args.batch_size)
 else:
     model = ML4CVD()
