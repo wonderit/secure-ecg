@@ -432,6 +432,7 @@ def train(args, model, private_train_loader, optimizer, epoch):
         target = target.view(-1, 1)
 
         loss = ((output - target) ** 2).sum().refresh() / batch_size
+        # loss = ((output - target) ** 2).sum() / batch_size
 
         loss.backward()
 
@@ -472,13 +473,13 @@ def test(args, model, private_test_loader, epoch):
 
     target_list = np.array(target_list).reshape(-1, 1)
     pred_list = np.array(pred_list).reshape(-1, 1)
-    print(target_list, pred_list)
+    print('example before rescale', target_list[0], pred_list[0])
 
     # output rescale
     target_list = rescale(target_list, MEAN, STD)
     pred_list = rescale(pred_list, MEAN, STD)
 
-    print(target_list, pred_list)
+    print('example after rescale', target_list[0], pred_list[0])
 
     rm = r_squared_mse(target_list, pred_list)
 

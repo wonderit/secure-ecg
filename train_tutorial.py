@@ -56,4 +56,6 @@ for iter in range(20):
     opt.step()
 
     # 6) print our progress
-    print(loss.get().float_precision())
+    print('loss' , loss.get().float_precision())
+    print('pred : ', pred.detach().clone().get().float_precision())
+    print('target: ', target.detach().clone().get().float_precision())
