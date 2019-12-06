@@ -53,10 +53,15 @@ _ = torch.manual_seed(args.seed)
 
 model_type = 'original'
 if args.compressed:
-    model_type = 'compressed'
+    model_type = 'comp'
 
-result_path = 'result_torch/{}_ep{}_bs{}_{}:{}_lr{}'.format(
+loss_type = 'adam'
+if args.sgd:
+    loss_type = 'sgd'
+
+result_path = 'result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}'.format(
     model_type,
+    loss_type,
     args.epochs,
     args.batch_size,
     args.n_train_items,
