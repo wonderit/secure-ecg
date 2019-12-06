@@ -589,9 +589,9 @@ def save_model(model, path):
 if args.compressed:
 
     if args.mpc:
-        model = ML4CVD_shallow()
-    else:
         model = CNN_forMPC()
+    else:
+        model = ML4CVD_shallow()
     summary(model, input_size=(12, 500), batch_size=args.batch_size)
 else:
     model = ML4CVD()
