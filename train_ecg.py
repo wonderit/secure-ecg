@@ -150,6 +150,10 @@ for hdf_file in hdf5_files:
 
 x = np.asarray(x_all)
 y = np.asarray(y_all)
+
+
+y = scale(y, MEAN, STD)
+
 if args.compressed:
     data = ECGDataset(x, y, transform=True)
 else:
@@ -231,7 +235,7 @@ class ML4CVD_shallow(nn.Module):
         super(ML4CVD_shallow, self).__init__()
         self.kernel_size = 7
         self.padding_size = 3
-        self.channel_size = 32
+        self.channel_size = 12
         self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
@@ -242,7 +246,9 @@ class ML4CVD_shallow(nn.Module):
         self.conv7 = nn.Conv1d(72, 16, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv8 = nn.Conv1d(16, 16, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv9 = nn.Conv1d(32, 16, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.fc1 = nn.Linear(2976, 16)
+        self.conv10 = nn.Conv1d(36, 1, kernel_size=1)
+        self.fc1 = nn.Linear(250, 16)
+        # self.fc1 = nn.Linear(2976, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
         # self.fc1 = nn.Linear(5620, 1)
@@ -256,24 +262,27 @@ class ML4CVD_shallow(nn.Module):
         x2 = F.relu(self.conv3(c1))  # 32
         y = torch.cat((x, x1, x2), dim=1)  # 96
         # downsizing
-        y = F.relu(self.conv4(y))  # 24
-        y = self.avgpool1(y)
+        # y = F.relu(self.conv4(y))  # 24
+        # y = self.avgpool1(y)
 
-        x3 = F.relu(self.conv5(y))
-        c2 = torch.cat((y, x3), dim=1)
-        x4 = F.relu(self.conv6(c2))
-        y = torch.cat((y, x3, x4), dim=1)
+        # x3 = F.relu(self.conv5(y))
+        # c2 = torch.cat((y, x3), dim=1)
+        # x4 = F.relu(self.conv6(c2))
+        # y = torch.cat((y, x3, x4), dim=1)
+        #
+        # y = F.relu(self.conv7(y))
+        # y = self.avgpool1(y)
+        #
+        # x5 = F.relu(self.conv8(y))
+        # c3 = torch.cat((y, x5), dim=1)
+        # x6 = F.relu(self.conv9(c3))
+        # y = torch.cat((y, x5, x6), dim=1)
 
-        y = F.relu(self.conv7(y))
-        y = self.avgpool1(y)
+        y = F.relu(self.conv10(y))
 
-        x5 = F.relu(self.conv8(y))
-        c3 = torch.cat((y, x5), dim=1)
-        x6 = F.relu(self.conv9(c3))
-        y = torch.cat((y, x5, x6), dim=1)
-
+        print('shape before flatten', y.shape)
         # Flatten
-        y = y.view(y.size(0), -1)
+        y = y.view(y.shape[0], -1)
 
         y = F.relu(self.fc1(y))
         y = F.relu(self.fc2(y))
@@ -379,9 +388,6 @@ def test(args, model, private_test_loader, epoch):
 
             output = model(data)
 
-            # output rescale
-            output = rescale(output, MEAN, STD)
-            target = rescale(target, MEAN, STD)
             # pred = output.argmax(dim=1)
             # correct += pred.eq(target.view_as(pred)).sum()
             # test_loss += ((output - target) ** 2).sum()
@@ -398,6 +404,11 @@ def test(args, model, private_test_loader, epoch):
     target_list = np.array(target_list).reshape(-1, 1)
     pred_list = np.array(pred_list).reshape(-1, 1)
     print(target_list.shape, pred_list.shape)
+
+    # output rescale
+    target_list = rescale(target_list, MEAN, STD)
+    pred_list = rescale(pred_list, MEAN, STD)
+
     rm = r_squared_mse(target_list, pred_list)
 
     if epoch % args.log_interval == 0:
@@ -525,8 +536,9 @@ else:
     model = ML4CVD()
     summary(model, input_size=(12, 5000), batch_size=args.batch_size)
 
+print('model sharing start')
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
-
+print('model sharing end')
 optimizer = optim.SGD(model.parameters(), lr=args.lr)
 # optimizer = optim.Adam(model.parameters(), lr=args.lr)
 optimizer = optimizer.fix_precision()
