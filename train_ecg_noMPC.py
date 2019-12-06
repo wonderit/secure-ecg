@@ -35,6 +35,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
+parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
 parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
@@ -281,6 +282,67 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
 
 print('Data Sharing complete')
 
+class CNN_forMPC(nn.Module):
+    def __init__(self):
+        super(CNN_forMPC, self).__init__()
+        self.kernel_size = 7
+        self.padding_size = 3
+        self.channel_size = 6
+        # self.channel_size = 32
+        self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv4 = nn.Conv1d(self.channel_size * 3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv6 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv7 = nn.Conv1d(self.channel_size * 3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv8 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv9 = nn.Conv1d(self.channel_size*2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv10 = nn.Conv1d(self.channel_size * 3, 1, kernel_size=1)
+        self.fc1 = nn.Linear(125, 16)
+        # self.fc1 = nn.Linear(2976, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+        # self.fc1 = nn.Linear(5620, 1)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))  # 32
+        x = F.relu(self.conv2(x))  # 32
+        x = self.avgpool1(x)  # 32
+        x1 = F.relu(self.conv2(x))
+        c1 = torch.cat((x, x1), dim=1)  # 64
+        x2 = F.relu(self.conv3(c1))  # 32
+        y = torch.cat((x, x1, x2), dim=1)  # 96
+        # downsizing
+        y = F.relu(self.conv4(y))  # 24
+        y = self.avgpool1(y)
+
+        x3 = F.relu(self.conv5(y))
+        c2 = torch.cat((y, x3), dim=1)
+        x4 = F.relu(self.conv6(c2))
+        y = torch.cat((y, x3, x4), dim=1)
+
+        # y = F.relu(self.conv7(y))
+        # y = self.avgpool1(y)
+        #
+        # x5 = F.relu(self.conv8(y))
+        # c3 = torch.cat((y, x5), dim=1)
+        # x6 = F.relu(self.conv9(c3))
+        # y = torch.cat((y, x5, x6), dim=1)
+
+        y = F.relu(self.conv10(y))
+
+        # print('shape before flatten', y.shape)
+        # Flatten
+        y = y.view(y.shape[0], -1)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+
+        return y
+
 class ML4CVD_shallow(nn.Module):
     def __init__(self):
         super(ML4CVD_shallow, self).__init__()
@@ -359,15 +421,15 @@ class ML4CVD(nn.Module):
         # self.fc1 = nn.Linear(5620, 1)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x)) # 32
-        x = F.relu(self.conv2(x)) # 32
-        x = self.avgpool1(x) # 32
+        x = F.relu(self.conv1(x))  # 32
+        x = F.relu(self.conv2(x))  # 32
+        x = self.avgpool1(x)  # 32
         x1 = F.relu(self.conv2(x))
-        c1 = torch.cat((x, x1), dim=1) # 64
-        x2 = F.relu(self.conv3(c1)) # 32
-        y = torch.cat((x, x1, x2), dim=1) # 96
+        c1 = torch.cat((x, x1), dim=1)  # 64
+        x2 = F.relu(self.conv3(c1))  # 32
+        y = torch.cat((x, x1, x2), dim=1)  # 96
         # downsizing
-        y = F.relu(self.conv4(y)) # 24
+        y = F.relu(self.conv4(y))  # 24
         y = self.avgpool1(y)
 
         x3 = F.relu(self.conv5(y))
@@ -443,10 +505,14 @@ def test(args, model, private_test_loader, epoch):
             start_time = time.time()
 
             output = model(data)
-
+            #
             # output rescale
             output = rescale(output, MEAN, STD)
             target = rescale(target, MEAN, STD)
+
+            # Reshape
+            output = output.view(-1, 1)
+            target = target.view(-1, 1)
 
             test_loss += ((output - target) ** 2).sum()
             # test_loss += torch.log(torch.cosh(output - target)).sum()
@@ -461,6 +527,11 @@ def test(args, model, private_test_loader, epoch):
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
     #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
     print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
+
+
+    # # output rescale
+    # target_list = rescale(target_list, MEAN, STD)
+    # pred_list = rescale(pred_list, MEAN, STD)
 
     rm = r_squared_mse(target_list, pred_list)
 
@@ -516,11 +587,17 @@ def save_model(model, path):
     torch.save(model.state_dict(), path)
 
 if args.compressed:
-    model = ML4CVD_shallow()
+
+    if args.mpc:
+        model = ML4CVD_shallow()
+    else:
+        model = CNN_forMPC()
     summary(model, input_size=(12, 500), batch_size=args.batch_size)
 else:
     model = ML4CVD()
     summary(model, input_size=(12, 5000), batch_size=args.batch_size)
+
+
 
 print(model)
 
