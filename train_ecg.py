@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
-parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc)", type=str, default='shallow')
+parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='shallow')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
@@ -44,7 +44,7 @@ parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=32)
-parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=16)
+parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=32)
 parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=3)
 
 args = parser.parse_args()
@@ -153,8 +153,12 @@ for hdf_file in hdf5_files:
         x_list.append(x)
     x_list = np.stack(x_list)
     x_list = x_list.reshape(12, -1)
-    if args.model_type in ['shallow', 'ann']:
+    if args.model_type in ['shallow', 'ann', 'cnn2d']:
         x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
+
+        if args.model_type == 'cnn2d':
+            x_list = x_list.reshape(x_list.shape[0], x_list.shape[1], 1)
+
     x_all.append(x_list)
 
 x = np.asarray(x_all)
@@ -263,9 +267,16 @@ class CNN_forMPC(nn.Module):
         # self.fc1 = nn.Linear(5620, 1)
 
     def forward(self, x):
+        # print('x', x.shape)
         x = F.relu(self.conv1(x))  # 32
+        # print('x1', x.shape)
         x = F.relu(self.conv2(x))  # 32
+        # print('x2', x.shape)
         x = self.avgpool1(x)  # 32
+        # print('x3', x.shape)
+        # x = F.relu(self.conv1(x))  # 32
+        # x = F.relu(self.conv2(x))  # 32
+        # x = self.avgpool1(x)  # 32
         x1 = F.relu(self.conv2(x))
         c1 = torch.cat((x, x1), dim=1)  # 64
         x2 = F.relu(self.conv3(c1))  # 32
@@ -299,6 +310,63 @@ class CNN_forMPC(nn.Module):
 
         return y
 
+
+class CNN2D_forMPC(nn.Module):
+    def __init__(self):
+        super(CNN2D_forMPC, self).__init__()
+        self.kernel_size = (1, 7)
+        self.padding_size = (1, 3)
+        self.channel_size = 6
+        # self.channel_size = 32
+        self.conv1 = nn.Conv2d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv2d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv3 = nn.Conv2d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv4 = nn.Conv2d(self.channel_size * 3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.avgpool1 = nn.AvgPool2d(kernel_size=(2, 1), stride=(2, 1))
+        self.conv5 = nn.Conv2d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv6 = nn.Conv2d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv10 = nn.Conv2d(self.channel_size * 3, 1, kernel_size=1)
+        self.fc1 = nn.Linear(127, 16)
+        # self.fc1 = nn.Linear(2976, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+        # self.fc1 = nn.Linear(5620, 1)
+
+    def forward(self, x):
+        # print('0', x.shape)
+        x = F.relu(self.conv1(x))  # 32
+        # print('1', x.shape)
+        x = F.relu(self.conv2(x))  # 32
+        # print('2', x.shape)
+
+        x = self.avgpool1(x)  # 32
+        x1 = F.relu(self.conv2(x))
+        # print('3', x.shape)
+        c1 = torch.cat((x, x1[:, :, :x.shape[2]]), dim=1)  # 64
+        # print('4', x.shape)
+        x2 = F.relu(self.conv3(c1))  # 32
+        # print('4', x.shape)
+        y = torch.cat((x, x1[:, :, :x.shape[2]], x2[:, :, :x.shape[2]]), dim=1)  # 96
+        # downsizing
+        y = F.relu(self.conv4(y))  # 24
+        y = self.avgpool1(y)
+
+        x3 = F.relu(self.conv5(y))
+        c2 = torch.cat((y, x3[:, :, :y.shape[2]]), dim=1)
+        x4 = F.relu(self.conv6(c2))
+        y = torch.cat((y, x3[:, :, :y.shape[2]], x4[:, :, :y.shape[2]]), dim=1)
+
+        y = F.relu(self.conv10(y))
+        # print('7', y.shape)
+        y = y.view(y.shape[0], -1)
+        # print('8', y.shape)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+
+        return y
+
 class ML4CVD_shallow(nn.Module):
     def __init__(self):
         super(ML4CVD_shallow, self).__init__()
@@ -323,9 +391,13 @@ class ML4CVD_shallow(nn.Module):
         # self.fc1 = nn.Linear(5620, 1)
 
     def forward(self, x):
+        print('x', x.shape)
         x = F.relu(self.conv1(x))  # 32
+        print('x1', x.shape)
         x = F.relu(self.conv2(x))  # 32
+        print('x2', x.shape)
         x = self.avgpool1(x)  # 32
+        print('x3', x.shape)
         x1 = F.relu(self.conv2(x))
         c1 = torch.cat((x, x1), dim=1)  # 64
         x2 = F.relu(self.conv3(c1))  # 32
@@ -437,6 +509,9 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         optimizer.zero_grad()
 
+        # print('data', data)
+        # print('command', data.handle_func_command)
+
         output = model(data)
 
         # loss = F.nll_loss(output, target)  <-- not possible here
@@ -474,39 +549,41 @@ def test(args, model, private_test_loader, epoch):
 
             # pred = output.argmax(dim=1)
             # correct += pred.eq(target.view_as(pred)).sum()
-            # test_loss += ((output - target) ** 2).sum()
+            test_loss += ((output - target) ** 2).sum()
             data_count += len(data)
-            pred_list.append(output.detach().clone().get().float_precision().numpy()[:, 0])
-            target_list.append(target.detach().clone().get().float_precision().numpy())
 
-    # test_loss = test_loss.get().float_precision()
+            if args.epochs == epoch:
+                pred_list.append(output.detach().clone().get().float_precision().numpy()[:, 0])
+                target_list.append(target.detach().clone().get().float_precision().numpy())
+
+    test_loss = test_loss.get().float_precision()
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
     #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
-    # print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
+    print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
 
+    if args.epochs == epoch:
+        target_list = np.array(target_list).reshape(-1)
+        pred_list = np.array(pred_list).reshape(-1)
+        print(target_list.shape, pred_list.shape)
+        print('example before rescale', target_list[0], pred_list[0])
 
-    target_list = np.array(target_list).reshape(-1)
-    pred_list = np.array(pred_list).reshape(-1)
-    print(target_list.shape, pred_list.shape)
-    print('example before rescale', target_list[0], pred_list[0])
+        # output rescale
+        target_list = rescale(target_list, MEAN, STD)
+        pred_list = rescale(pred_list, MEAN, STD)
 
-    # output rescale
-    target_list = rescale(target_list, MEAN, STD)
-    pred_list = rescale(pred_list, MEAN, STD)
+        print('example after rescale', target_list[0], pred_list[0])
 
-    print('example after rescale', target_list[0], pred_list[0])
-
-    rm = r_squared_mse(target_list, pred_list)
-
-    if epoch % args.log_interval == 0:
-        scatter_plot(target_list, pred_list, epoch, rm)
-
-        # Save model
-        if not os.path.exists('{}/{}'.format(result_path, 'models')):
-            os.makedirs('{}/{}'.format(result_path, 'models'))
+        rm = r_squared_mse(target_list, pred_list)
 
         if epoch % args.log_interval == 0:
-            save_model(model.get().float_precision(), "{}/models/ep{}.h5".format(result_path, epoch))
+            scatter_plot(target_list, pred_list, epoch, rm)
+
+            # Save model
+            if not os.path.exists('{}/{}'.format(result_path, 'models')):
+                os.makedirs('{}/{}'.format(result_path, 'models'))
+
+            if epoch % args.log_interval == 0:
+                save_model(model.get().float_precision(), "{}/models/ep{}.h5".format(result_path, epoch))
 
 
 def scatter_plot(y_true, y_pred, epoch, message):
@@ -531,7 +608,7 @@ def scatter_plot(y_true, y_pred, epoch, message):
 
 def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
 
-    r2 = r2_score(y_true, y_pred, multioutput='uniform_average')
+    r2 = r2_score(y_true, y_pred, sample_weight=None, multioutput=None)
     mse = mean_squared_error(y_true, y_pred,
                              sample_weight=sample_weight,
                              multioutput=multioutput)
@@ -624,13 +701,19 @@ def step(opt, closure=None):
     return loss
 
 
-if args.model_type in ['shallow', 'ann']:
+if args.model_type in ['shallow', 'ann', 'cnn2d']:
 
     if args.model_type == 'shallow':
         model = CNN_forMPC()
+    elif args.model_type == 'cnn2d':
+        model = CNN2D_forMPC()
     else:
         model = ANN()
-    summary(model, input_size=(12, 500), batch_size=args.batch_size)
+
+    if args.model_type == 'cnn2d':
+        summary(model, input_size=(12, 500, 1), batch_size=args.batch_size)
+    else:
+        summary(model, input_size=(12, 500), batch_size=args.batch_size)
 else:
     model = ML4CVD()
     summary(model, input_size=(12, 5000), batch_size=args.batch_size)
