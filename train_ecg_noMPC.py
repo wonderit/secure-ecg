@@ -597,7 +597,7 @@ def test(args, model, private_test_loader, epoch):
             # test_loss += torch.log(torch.cosh(output - target)).sum()
 
             data_count += len(output)
-            pred_list.extend(output[:, 0].numpy())
+            pred_list.extend(output.numpy())
             target_list.extend(target.numpy())
             # print('rmse:', torch.sqrt(((output - target) ** 2).sum() / args.batch_size))
             # print('r2score:', r2_score(target_list, pred_list))
