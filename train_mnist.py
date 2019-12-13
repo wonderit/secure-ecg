@@ -77,7 +77,7 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
     )
 
     private_train_loader = [
-        (secret_share(data), secret_share(one_hot_of(target)))
+        (secret_share(data), secret_share(target))
         for i, (data, target) in enumerate(train_loader)
         if i < n_train_items / args.batch_size
     ]
@@ -88,7 +88,7 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
     )
 
     private_test_loader = [
-        (secret_share(data), secret_share(target.float()))
+        (secret_share(data), secret_share(target))
         for i, (data, target) in enumerate(test_loader)
         if i < n_test_items / args.test_batch_size
     ]
@@ -105,12 +105,17 @@ private_train_loader, private_test_loader = get_private_data_loaders(
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(28 * 28, 128)
+        self.fc1 = nn.Linear(391, 128)
+        self.conv1d = nn.Conv1d(1, 1, 3)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, 10)
 
     def forward(self, x):
-        x = x.view(-1, 28 * 28)
+        x = x.view(-1, 1, 28 * 28)
+        x = F.relu(self.conv1d(x))
+        x = self.avgpool1(x)  # 32
+        x = x.view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -127,6 +132,8 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
+        print(output.shape, target)
+        exit()
         loss = ((output - target) ** 2).sum().refresh() / batch_size
 
         loss.backward()
@@ -161,6 +168,7 @@ model = Net()
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr)
+# optimizer = optim.Adam(model.parameters(), lr=args.lr)
 optimizer = optimizer.fix_precision()
 
 for epoch in range(1, args.epochs + 1):

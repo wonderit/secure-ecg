@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset
-from torchvision import transforms
 import glob
 import h5py
 import numpy as np
@@ -38,13 +37,13 @@ parser.add_argument("-c", "--compressed", help="Compress ecg data", action='stor
 parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='shallow')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
-parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=2e-4)
+parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=10)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=10)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=2e-3)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
-parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=32)
-parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=32)
+parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=30)
+parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=10)
 parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=3)
 
 args = parser.parse_args()
@@ -152,7 +151,7 @@ for hdf_file in hdf5_files:
         x = f['ecg_rest'][key][:]
         x_list.append(x)
     x_list = np.stack(x_list)
-    x_list = x_list.reshape(12, -1)
+    # x_list = x_list.reshape(12, -1)
     if args.model_type in ['shallow', 'ann', 'cnn2d']:
         x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
 
@@ -170,28 +169,9 @@ y = scale(y, MEAN, STD)
 
 data = ECGDataset(x, y, transform=False)
 
-train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
-
 print('Torch Dataset Train/Test split finished...')
 
-def get_private_data_loaders(precision_fractional, workers, crypto_provider):
-    def one_hot_of(index_tensor):
-        """
-        Transform to one hot tensor
-
-        Example:
-            [0, 3, 9]
-            =>
-            [[1., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
-             [0., 0., 0., 1., 0., 0., 0., 0., 0., 0.],
-             [0., 0., 0., 0., 0., 0., 0., 0., 0., 1.]]
-
-        """
-        onehot_tensor = torch.zeros(*index_tensor.shape, 10)  # 10 classes for MNIST
-        onehot_tensor = onehot_tensor.scatter(1, index_tensor.view(-1, 1), 1)
-        return onehot_tensor
+def get_private_data_loaders(precision_fractional, workers, crypto_provider, data):
 
     def secret_share(tensor):
         """
@@ -203,15 +183,11 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
                 .share(*workers, crypto_provider=crypto_provider, requires_grad=True)
         )
 
-    transformation = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
+    train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
 
-    # train_loader = torch.utils.data.DataLoader(
-    #     datasets.MNIST('../data', train=True, download=True, transform=transformation),
-    #     batch_size=args.batch_size
-    # )
+
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
     private_train_loader = [
         (secret_share(data), secret_share(target))
@@ -219,13 +195,8 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
         if i < args.n_train_items / args.batch_size
     ]
 
-    # test_loader = torch.utils.data.DataLoader(
-    #     datasets.MNIST('../data', train=False, download=True, transform=transformation),
-    #     batch_size=args.test_batch_size
-    # )
-
     private_test_loader = [
-        (secret_share(data), secret_share(target.float()))
+        (secret_share(data), secret_share(target))
         for i, (data, target) in enumerate(test_loader)
         if i < args.n_test_items / args.batch_size
     ]
@@ -236,7 +207,8 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
 private_train_loader, private_test_loader = get_private_data_loaders(
     precision_fractional=args.precision_fractional,
     workers=workers,
-    crypto_provider=crypto_provider
+    crypto_provider=crypto_provider,
+    data=data,
 )
 
 print('Data Sharing complete')
@@ -439,7 +411,7 @@ class ANN(nn.Module):
         self.fc3 = nn.Linear(64, 1)
 
     def forward(self, x):
-        x = x.view(-1, 12 * 500)
+        x = x.view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -517,9 +489,10 @@ def train(args, model, private_train_loader, optimizer, epoch):
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
         # Reshape
-        output = output.view(-1)
-        target = target.view(-1)
-
+        # output = output.view(batch_size, -1)
+        # target = target.view(batch_size, -1)
+        target = target.view(target.shape[0], 1)
+        # loss = ((output - target) ** 2).sum()
         loss = ((output - target) ** 2).sum().refresh() / batch_size
         # loss = ((output - target) ** 2).sum() / batch_size
 
@@ -546,15 +519,15 @@ def test(args, model, private_test_loader, epoch):
             start_time = time.time()
 
             output = model(data)
-
+            target = target.view(target.shape[0], 1)
             # pred = output.argmax(dim=1)
             # correct += pred.eq(target.view_as(pred)).sum()
             test_loss += ((output - target) ** 2).sum()
             data_count += len(data)
 
             if args.epochs == epoch:
-                pred_list.append(output.detach().clone().get().float_precision().numpy()[:, 0])
-                target_list.append(target.detach().clone().get().float_precision().numpy())
+                pred_list.append(output.copy().get().float_precision().numpy()[:, 0])
+                target_list.append(target.copy().get().float_precision().numpy())
 
     test_loss = test_loss.get().float_precision()
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
@@ -631,75 +604,6 @@ def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
 def save_model(model, path):
 
     torch.save(model.state_dict(), path)
-
-def step(opt, closure=None):
-    """Performs a single optimization step.
-
-    Arguments:
-        closure (callable, optional): A closure that reevaluates the model
-            and returns the loss.
-    """
-    loss = None
-    # if closure is not None:
-    #     loss = closure()
-
-    for group in opt.param_groups:
-        for p in group['params']:
-            if p.grad is None:
-                continue
-            grad = p.grad.data
-            # if grad.is_sparse:
-            #     raise RuntimeError('Adam does not support sparse gradients, please consider SparseAdam instead')
-            amsgrad = group['amsgrad']
-
-            state = opt.state[p]
-
-            # State initialization
-            if len(state) == 0:
-                state['step'] = 0
-                # Exponential moving average of gradient values
-                state['exp_avg'] = torch.zeros_like(p.data).float()
-                # Exponential moving average of squared gradient values
-                state['exp_avg_sq'] = torch.zeros_like(p.data).float()
-                if amsgrad:
-                    # Maintains max of all exp. moving avg. of sq. grad. values
-                    state['max_exp_avg_sq'] = torch.zeros_like(p.data)
-
-            exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-            if amsgrad:
-                max_exp_avg_sq = state['max_exp_avg_sq']
-            beta1, beta2 = group['betas']
-
-            state['step'] += 1
-            bias_correction1 = 1 - beta1 ** state['step']
-            bias_correction2 = 1 - beta2 ** state['step']
-
-            if group['weight_decay'] != 0:
-                grad.add_(group['weight_decay'], p.data)
-
-            # Decay the first and second moment running average coefficient
-            exp_avg.mul_(beta1).add_(1 - beta1, grad)
-            exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)
-            if amsgrad:
-                # Maintains the maximum of all 2nd moment running avg. till now
-                torch.max(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
-                # Use the max. for normalizing running avg. of gradient
-                denom = (max_exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
-            else:
-                denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add_(group['eps'])
-
-            step_size = group['lr'] / bias_correction1
-
-            print(-step_size)
-            print(exp_avg)
-            print(denom)
-            print(p.data)
-            # torch.addcdiv()
-            p.data.add_(-step_size.mul(exp_avg.div(denom)))
-            # p.data.addcdiv_(-step_size, exp_avg, denom)
-
-    return loss
-
 
 if args.model_type in ['shallow', 'ann', 'cnn2d']:
 

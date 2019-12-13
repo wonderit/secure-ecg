@@ -39,7 +39,7 @@ parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann,
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=10)
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=2e-4)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
@@ -294,7 +294,7 @@ print('Data Sharing complete')
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
-        self.fc1 = nn.Linear(12 * 500, 128)
+        self.fc1 = nn.Linear(3 * 500, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, 1)
 
@@ -333,7 +333,11 @@ class CNN_forMPC(nn.Module):
         x = F.relu(self.conv1(x))  # 32
         x = F.relu(self.conv2(x))  # 32
         x = self.avgpool1(x)  # 32
+
+        # y = F.relu(self.conv2(x))
         x1 = F.relu(self.conv2(x))
+
+        # Comment Temp
         c1 = torch.cat((x, x1), dim=1)  # 64
         x2 = F.relu(self.conv3(c1))  # 32
         y = torch.cat((x, x1, x2), dim=1)  # 96
@@ -345,6 +349,7 @@ class CNN_forMPC(nn.Module):
         c2 = torch.cat((y, x3), dim=1)
         x4 = F.relu(self.conv6(c2))
         y = torch.cat((y, x3, x4), dim=1)
+        # Comment Temp
 
         # y = F.relu(self.conv7(y))
         # y = self.avgpool1(y)
@@ -550,9 +555,10 @@ def train(args, model, private_train_loader, optimizer, epoch):
         batch_size = output.shape[0]
 
         # Reshape
-        output = output.view(-1)
-        target = target.view(-1)
+        # output = output.view(-1)
+        # target = target.view(-1)
 
+        target = target.view(target.shape[0], 1)
         # r2 : 0.67 with smooth l1 loss
         # loss = F.smooth_l1_loss(output, target).sum() / batch_size
 
@@ -561,6 +567,7 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # r2 : 0.646 w mse loss
         loss = ((output - target) ** 2).sum() / batch_size
+        # loss = ((output - target) ** 2).sum()
 
         loss.backward()
 
@@ -590,8 +597,10 @@ def test(args, model, private_test_loader, epoch):
             target = rescale(target, MEAN, STD)
 
             # Reshape
-            output = output.view(-1)
-            target = target.view(-1)
+            # output = output.view(-1)
+            # target = target.view(-1)
+
+            target = target.view(target.shape[0], 1)
 
             test_loss += ((output - target) ** 2).sum()
             # test_loss += torch.log(torch.cosh(output - target)).sum()
