@@ -34,12 +34,12 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
-parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='shallow')
+parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, cann, pc, cnn2d)", type=str, default='cann')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
-parser.add_argument("-sgd", "--sgd", help="use sgd as optimizer", action='store_true')
+parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=10)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=10)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=2e-3)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=4e-3)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=30)
@@ -51,17 +51,9 @@ MEAN = 59.3
 STD = 10.6
 _ = torch.manual_seed(args.seed)
 
-# model_type = 'original'
-# if args.compressed:
-#     model_type = 'comp'
-
-loss_type = 'adam'
-if args.sgd:
-    loss_type = 'sgd'
-
 result_path = 'secure-result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}'.format(
     args.model_type,
-    loss_type,
+    args.loss_type,
     args.epochs,
     args.batch_size,
     args.n_train_items,
@@ -89,15 +81,15 @@ ecg_key_string_list = [
     "strip_I",
     "strip_II",
     "strip_III",
-    "strip_aVR",
-    "strip_aVL",
-    "strip_aVF",
-    "strip_V1",
-    "strip_V2",
-    "strip_V3",
-    "strip_V4",
-    "strip_V5",
-    "strip_V6",
+    # "strip_aVR",
+    # "strip_aVL",
+    # "strip_aVF",
+    # "strip_V1",
+    # "strip_V2",
+    # "strip_V3",
+    # "strip_V4",
+    # "strip_V5",
+    # "strip_V6",
 ]
 
 hdf5_files = []
@@ -152,8 +144,8 @@ for hdf_file in hdf5_files:
         x_list.append(x)
     x_list = np.stack(x_list)
     # x_list = x_list.reshape(12, -1)
-    if args.model_type in ['shallow', 'ann', 'cnn2d']:
-        x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
+    if args.model_type in ['shallow', 'ann', 'cann', 'cnn2d']:
+        x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
 
         if args.model_type == 'cnn2d':
             x_list = x_list.reshape(x_list.shape[0], x_list.shape[1], 1)
@@ -403,6 +395,35 @@ class ML4CVD_shallow(nn.Module):
 
         return y
 
+
+class CANN(nn.Module):
+    def __init__(self):
+        super(CANN, self).__init__()
+        self.kernel_size = 7
+        self.padding_size = 3
+        self.channel_size = 6
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.fc1 = nn.Linear(186, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))  # 32
+        x = self.avgpool1(x)  # 32
+        y = F.relu(self.conv2(x))
+        y = self.avgpool1(y)
+        y = F.relu(self.conv2(y))
+        y = self.avgpool1(y)
+        y = F.relu(self.conv2(y))
+        y = self.avgpool1(y)
+        y = y.view(y.shape[0], -1)
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+        return y
+
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
@@ -416,63 +437,63 @@ class ANN(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-
-class ML4CVD(nn.Module):
-    def __init__(self):
-        super(ML4CVD, self).__init__()
-        self.kernel_size = 71
-        self.padding_size = 35
-        self.channel_size = 32
-        self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
-        self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
-        self.conv4 = nn.Conv1d(self.channel_size * 3, 24, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
-        self.conv5 = nn.Conv1d(24, 24, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.conv6 = nn.Conv1d(48, 24, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.conv7 = nn.Conv1d(72, 16, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.conv8 = nn.Conv1d(16, 16, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.conv9 = nn.Conv1d(32, 16, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.fc1 = nn.Linear(30000, 16)
-        self.fc2 = nn.Linear(16, 64)
-        self.fc3 = nn.Linear(64, 1)
-        # self.fc1 = nn.Linear(5620, 1)
-
-    def forward(self, x):
-        x = F.relu(self.conv1(x))  # 32
-        x = F.relu(self.conv2(x))  # 32
-        x = self.avgpool1(x)  # 32
-        x1 = F.relu(self.conv2(x))
-        c1 = torch.cat((x, x1), dim=1)  # 64
-        x2 = F.relu(self.conv3(c1))  # 32
-        y = torch.cat((x, x1, x2), dim=1)  # 96
-        # downsizing
-        y = F.relu(self.conv4(y))  # 24
-        y = self.avgpool1(y)
-
-        x3 = F.relu(self.conv5(y))
-        c2 = torch.cat((y, x3), dim=1)
-        x4 = F.relu(self.conv6(c2))
-        y = torch.cat((y, x3, x4), dim=1)
-
-        y = F.relu(self.conv7(y))
-        y = self.avgpool1(y)
-
-        x5 = F.relu(self.conv8(y))
-        c3 = torch.cat((y, x5), dim=1)
-        x6 = F.relu(self.conv9(c3))
-        y = torch.cat((y, x5, x6), dim=1)
-
-        # Flatten
-        y = y.view(y.size(0), -1)
-
-        y = F.relu(self.fc1(y))
-        y = F.relu(self.fc2(y))
-        y = self.fc3(y)
-
-        return y
+#
+# class ML4CVD(nn.Module):
+#     def __init__(self):
+#         super(ML4CVD, self).__init__()
+#         self.kernel_size = 71
+#         self.padding_size = 35
+#         self.channel_size = 32
+#         self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+#         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+#                                padding=self.padding_size)
+#         self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size,
+#                                padding=self.padding_size)
+#         self.conv4 = nn.Conv1d(self.channel_size * 3, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+#         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+#         self.conv5 = nn.Conv1d(24, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+#         self.conv6 = nn.Conv1d(48, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+#         self.conv7 = nn.Conv1d(72, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+#         self.conv8 = nn.Conv1d(16, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+#         self.conv9 = nn.Conv1d(32, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+#         self.fc1 = nn.Linear(30000, 16)
+#         self.fc2 = nn.Linear(16, 64)
+#         self.fc3 = nn.Linear(64, 1)
+#         # self.fc1 = nn.Linear(5620, 1)
+#
+#     def forward(self, x):
+#         x = F.relu(self.conv1(x))  # 32
+#         x = F.relu(self.conv2(x))  # 32
+#         x = self.avgpool1(x)  # 32
+#         x1 = F.relu(self.conv2(x))
+#         c1 = torch.cat((x, x1), dim=1)  # 64
+#         x2 = F.relu(self.conv3(c1))  # 32
+#         y = torch.cat((x, x1, x2), dim=1)  # 96
+#         # downsizing
+#         y = F.relu(self.conv4(y))  # 24
+#         y = self.avgpool1(y)
+#
+#         x3 = F.relu(self.conv5(y))
+#         c2 = torch.cat((y, x3), dim=1)
+#         x4 = F.relu(self.conv6(c2))
+#         y = torch.cat((y, x3, x4), dim=1)
+#
+#         y = F.relu(self.conv7(y))
+#         y = self.avgpool1(y)
+#
+#         x5 = F.relu(self.conv8(y))
+#         c3 = torch.cat((y, x5), dim=1)
+#         x6 = F.relu(self.conv9(c3))
+#         y = torch.cat((y, x5, x6), dim=1)
+#
+#         # Flatten
+#         y = y.view(y.size(0), -1)
+#
+#         y = F.relu(self.fc1(y))
+#         y = F.relu(self.fc2(y))
+#         y = self.fc3(y)
+#
+#         return y
 
 def train(args, model, private_train_loader, optimizer, epoch):
     model.train()
@@ -605,19 +626,21 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
-if args.model_type in ['shallow', 'ann', 'cnn2d']:
+if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann']:
 
     if args.model_type == 'shallow':
         model = CNN_forMPC()
     elif args.model_type == 'cnn2d':
         model = CNN2D_forMPC()
+    elif args.model_type == 'cann':
+        model = CANN()
     else:
         model = ANN()
 
     if args.model_type == 'cnn2d':
         summary(model, input_size=(12, 500, 1), batch_size=args.batch_size)
     else:
-        summary(model, input_size=(12, 500), batch_size=args.batch_size)
+        summary(model, input_size=(3, 500), batch_size=args.batch_size)
 else:
     model = ML4CVD()
     summary(model, input_size=(12, 5000), batch_size=args.batch_size)
@@ -627,10 +650,16 @@ model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, r
 print('model sharing end')
 
 
-if args.sgd:
-    optimizer = optim.SGD(model.parameters(), lr=args.lr)
-else:
+if args.loss_type == 'adam':
     optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
+elif args.loss_type == 'asgd':
+    optimizer = optim.ASGD(model.parameters(), lr=args.lr)  # 4.58
+elif args.loss_type == 'lbfgs':
+    optimizer = optim.LBFGS(model.parameters(), lr=args.lr)  # 4.58
+elif args.loss_type == 'adadelta':
+    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)  # 4.58
+else:
+    optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
 # optimizer = optim.SGD(model.parameters(), lr=args.lr)
 # optimizer = optim.Adam(model.parameters(), lr=args.lr)
