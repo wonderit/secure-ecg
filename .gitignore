@@ -76,3 +76,4 @@ data/
 *result*/**
 *.log
 *.out
+splitted_data/**

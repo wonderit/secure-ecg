@@ -45,6 +45,7 @@ parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=12
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
+parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0)
 # parser.add_argument("--mean", help="Set mean", type=float, default=59.3)
 # parser.add_argument("--std", help="Set std", type=float, default=10.6)
 
@@ -53,14 +54,15 @@ MEAN = 59.3
 STD = 10.6
 _ = torch.manual_seed(args.seed)
 
-result_path = 'result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}'.format(
+result_path = 'result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}_mom{}'.format(
     args.model_type,
     args.loss_type,
     args.epochs,
     args.batch_size,
     args.n_train_items,
     args.n_test_items,
-    args.lr
+    args.lr,
+    args.momentum
 )
 
 # import syft as sy  # import the Pysyft library
@@ -347,7 +349,7 @@ class CNN_forMPC(nn.Module):
         self.padding_size = 3
         self.channel_size = 6
         # self.channel_size = 32
-        self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv4 = nn.Conv1d(self.channel_size * 3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
@@ -746,7 +748,7 @@ elif args.loss_type == 'lbfgs':
 elif args.loss_type == 'adadelta':
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)  # 4.58
 else:
-    optimizer = optim.SGD(model.parameters(), lr=args.lr)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
 for epoch in range(1, args.epochs + 1):
     train(args, model, train_loader, optimizer, epoch)
