@@ -6,6 +6,9 @@ import glob
 import h5py
 import numpy as np
 import argparse
+import os
+from random import sample
+from sklearn.model_selection import train_test_split
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
@@ -20,15 +23,15 @@ ecg_key_string_list = [
     "strip_I",
     "strip_II",
     "strip_III",
-    "strip_aVR",
-    "strip_aVL",
-    "strip_aVF",
-    "strip_V1",
-    "strip_V2",
-    "strip_V3",
-    "strip_V4",
-    "strip_V5",
-    "strip_V6",
+    # "strip_aVR",
+    # "strip_aVL",
+    # "strip_aVF",
+    # "strip_V1",
+    # "strip_V2",
+    # "strip_V3",
+    # "strip_V4",
+    # "strip_V5",
+    # "strip_V6",
 ]
 
 hdf5_files = []
@@ -64,7 +67,7 @@ for hdf_file in hdf5_files:
         x = f['ecg_rest'][key][:]
         x_list.append(x)
     x_list = np.stack(x_list)
-    x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
+    x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
     x_all.append(x_list)
 
 x = np.asarray(x_all)
@@ -72,40 +75,33 @@ y = np.asarray(y_all)
 
 print(x.shape, y.shape)
 
-class ECGDataset(Dataset):
-    def __init__(self, data, target, transform=None):
-        self.data = torch.from_numpy(data).float()
-        self.target = torch.from_numpy(target).float()
-        self.transform = transform
+x = x.reshape(x.shape[0], -1)
 
-    def __getitem__(self, index):
-        x = self.data[index]
-        y = self.target[index]
+print(x.shape, y.shape)
 
-        return x, y
+total_lengths = [args.n_train_items, args.n_test_items]
+indices = sample(range(sum(total_lengths)), args.n_test_items)
+# test_x = x[indices]
+# test_y = y[indices]
+# train_x = np.where(~indices, x)
+# train_y = np.where(~indices, y)
+train_x, test_x, train_y, test_y = train_test_split(x, y, test_size = args.n_test_items / sum(total_lengths))
 
-    def __len__(self):
-        return len(self.data)
+print(train_x.shape, train_y.shape, test_x.shape, test_y.shape)
+data_dir = '../data/ecg/text'
 
-data = ECGDataset(x, y, transform=False)
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
 
-train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
+train_file_suffix = 'train'
+test_file_suffix = 'test'
 
-for id, (x, y) in enumerate(train_dataset):
-    hf = h5py.File('{}/{}.h5'.format('splitted_data_test/train', id+1), 'w')
-    hf.create_dataset('x', data=x)
-    hf.create_dataset('y', data=y)
-    hf.close()
+file_name_train_x = 'X{}'.format(train_file_suffix)
+file_name_train_y = 'y{}'.format(train_file_suffix)
+file_name_test_x = 'X{}'.format(test_file_suffix)
+file_name_test_y = 'y{}'.format(test_file_suffix)
 
-for id, (x, y) in enumerate(test_dataset):
-    file_name = '{}/{}.h5'.format('splitted_data_test/test', id + 1)
-    hf = h5py.File(file_name, 'w')
-
-    for (i, key) in enumerate(ecg_key_string_list):
-        hf.create_dataset(key, data=x[i])
-
-    hf.create_dataset('y', data=[y])
-    hf.close()
-    # hf2 = h5py.File(file_name, 'r')
-    # print(np.array(hf2['strip_I']))
-    # print(np.array(hf2['y']))
+np.savetxt('{}/{}'.format(data_dir, file_name_train_x), train_x, delimiter=',', fmt='%1.1f')
+np.savetxt('{}/{}'.format(data_dir, file_name_train_y), train_y, delimiter='\n', fmt='%d')
+np.savetxt('{}/{}'.format(data_dir, file_name_test_x), test_x, delimiter=',', fmt='%1.1f')
+np.savetxt('{}/{}'.format(data_dir, file_name_test_y), test_y, delimiter='\n', fmt='%d')
