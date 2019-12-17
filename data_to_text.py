@@ -20,15 +20,15 @@ ecg_key_string_list = [
     "strip_I",
     "strip_II",
     "strip_III",
-    # "strip_aVR",
-    # "strip_aVL",
-    # "strip_aVF",
-    # "strip_V1",
-    # "strip_V2",
-    # "strip_V3",
-    # "strip_V4",
-    # "strip_V5",
-    # "strip_V6",
+    "strip_aVR",
+    "strip_aVL",
+    "strip_aVF",
+    "strip_V1",
+    "strip_V2",
+    "strip_V3",
+    "strip_V4",
+    "strip_V5",
+    "strip_V6",
 ]
 
 hdf5_files = []
@@ -64,7 +64,7 @@ for hdf_file in hdf5_files:
         x = f['ecg_rest'][key][:]
         x_list.append(x)
     x_list = np.stack(x_list)
-    x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
+    x_list = x_list.reshape([12, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
     x_all.append(x_list)
 
 x = np.asarray(x_all)
@@ -92,13 +92,20 @@ data = ECGDataset(x, y, transform=False)
 train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
 
 for id, (x, y) in enumerate(train_dataset):
-    hf = h5py.File('{}/{}.h5'.format('splitted_data/train', id+1), 'w')
+    hf = h5py.File('{}/{}.h5'.format('splitted_data_test/train', id+1), 'w')
     hf.create_dataset('x', data=x)
     hf.create_dataset('y', data=y)
     hf.close()
 
 for id, (x, y) in enumerate(test_dataset):
-    hf = h5py.File('{}/{}.h5'.format('splitted_data/test', id + 1), 'w')
-    hf.create_dataset('x', data=x)
-    hf.create_dataset('y', data=y)
+    file_name = '{}/{}.h5'.format('splitted_data_test/test', id + 1)
+    hf = h5py.File(file_name, 'w')
+
+    for (i, key) in enumerate(ecg_key_string_list):
+        hf.create_dataset(key, data=x[i])
+
+    hf.create_dataset('y', data=[y])
     hf.close()
+    # hf2 = h5py.File(file_name, 'r')
+    # print(np.array(hf2['strip_I']))
+    # print(np.array(hf2['y']))
