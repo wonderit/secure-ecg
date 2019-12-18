@@ -17,6 +17,12 @@ parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, 
 
 args = parser.parse_args()
 _ = torch.manual_seed(args.seed)
+MEAN = 59.3
+STD = 10.6
+def scale(arr, std, mean):
+    arr -= mean
+    arr /= (std + 1e-7)
+    return arr
 
 DATAPATH = '../data/ecg/raw/2019-11-19'
 ecg_key_string_list = [
@@ -73,22 +79,17 @@ for hdf_file in hdf5_files:
 x = np.asarray(x_all)
 y = np.asarray(y_all)
 
-print(x.shape, y.shape)
-
 x = x.reshape(x.shape[0], -1)
+y = scale(y, MEAN, STD)
 
 print(x.shape, y.shape)
 
 total_lengths = [args.n_train_items, args.n_test_items]
 indices = sample(range(sum(total_lengths)), args.n_test_items)
-# test_x = x[indices]
-# test_y = y[indices]
-# train_x = np.where(~indices, x)
-# train_y = np.where(~indices, y)
 train_x, test_x, train_y, test_y = train_test_split(x, y, test_size = args.n_test_items / sum(total_lengths))
 
 print(train_x.shape, train_y.shape, test_x.shape, test_y.shape)
-data_dir = '../data/ecg/text'
+data_dir = '../data/ecg/text_demo'
 
 if not os.path.exists(data_dir):
     os.makedirs(data_dir)
@@ -102,6 +103,6 @@ file_name_test_x = 'X{}'.format(test_file_suffix)
 file_name_test_y = 'y{}'.format(test_file_suffix)
 
 np.savetxt('{}/{}'.format(data_dir, file_name_train_x), train_x, delimiter=',', fmt='%1.1f')
-np.savetxt('{}/{}'.format(data_dir, file_name_train_y), train_y, delimiter='\n', fmt='%d')
+np.savetxt('{}/{}'.format(data_dir, file_name_train_y), train_y, delimiter='\n', fmt='%f')
 np.savetxt('{}/{}'.format(data_dir, file_name_test_x), test_x, delimiter=',', fmt='%1.1f')
-np.savetxt('{}/{}'.format(data_dir, file_name_test_y), test_y, delimiter='\n', fmt='%d')
+np.savetxt('{}/{}'.format(data_dir, file_name_test_y), test_y, delimiter='\n', fmt='%f')
