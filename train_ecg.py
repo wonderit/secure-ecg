@@ -44,7 +44,7 @@ parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=12
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=30)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=10)
-parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=4)
+parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=3)
 parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
 
 args = parser.parse_args()
