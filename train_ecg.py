@@ -567,8 +567,8 @@ def test(args, model, private_test_loader, epoch):
             data_count += len(data)
 
             if args.epochs == epoch:
-                pred_list.append(output.copy().get().float_precision().numpy()[:, 0])
-                target_list.append(target.copy().get().float_precision().numpy()[:, 0])
+                pred_list.extend(output.copy().get().float_precision().numpy()[:, 0])
+                target_list.extend(target.copy().get().float_precision().numpy()[:, 0])
 
     test_loss = test_loss.get().float_precision()
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
