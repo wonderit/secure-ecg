@@ -40,12 +40,12 @@ parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
 parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=2e-4)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=4e-4)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
-parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0)
+parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
 # parser.add_argument("--mean", help="Set mean", type=float, default=59.3)
 # parser.add_argument("--std", help="Set std", type=float, default=10.6)
 
@@ -145,6 +145,7 @@ x = np.asarray(x_all)
 y = np.asarray(y_all)
 
 y = scale(y, MEAN, STD)
+# x = scale(x, 1.66, 155.51)
 # x = scale(x, 15.9, 147.9)
 
 
@@ -288,24 +289,26 @@ class CANN(nn.Module):
     def __init__(self):
         super(CANN, self).__init__()
         self.kernel_size = 7
-        self.padding_size = 3
+        self.padding_size = 0
         self.channel_size = 6
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.fc1 = nn.Linear(186, 64)
-        self.fc2 = nn.Linear(64, 16)
-        self.fc3 = nn.Linear(16, 1)
+        self.fc1 = nn.Linear(2856, 16)
+        # self.fc1 = nn.Linear(150, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))  # 32
-        x = self.avgpool1(x)  # 32
+        x = self.conv1(x)  # 32
+        # x = self.avgpool1(x)  # 32
+        # y = F.relu(self.conv2(x))
         y = F.relu(self.conv2(x))
-        y = self.avgpool1(y)
+        # y = self.avgpool1(y)
+        y = self.conv2(y)
+        # y = self.avgpool1(y)
         y = F.relu(self.conv2(y))
-        y = self.avgpool1(y)
-        y = F.relu(self.conv2(y))
-        y = self.avgpool1(y)
+        # y = self.avgpool1(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
         y = F.relu(self.fc2(y))
@@ -315,27 +318,30 @@ class CANN(nn.Module):
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
-        self.channel_size = 1
+        self.channel_size = 3
         self.fc1 = nn.Linear(self.channel_size * 500, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, 1)
+        self.fc4 = nn.Linear(self.channel_size * 500, 16)
+        self.fc5 = nn.Linear(16, 64)
+        self.fc6 = nn.Linear(64, 1)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))  # 32
-        x = F.relu(self.conv2(x))  # 32
-        x = self.avgpool1(x)  # 32
-
-        # y = F.relu(self.conv2(x))
-        x1 = F.relu(self.conv2(x))
-
-        # Comment Temp
-        c1 = torch.cat((x, x1), dim=1)  # 64
-        x2 = F.relu(self.conv3(c1))  # 32
-        y = torch.cat((x, x1, x2), dim=1)  # 96
-        # downsizing
-        y = F.relu(self.conv10(y))  # 24
-        # y = self.avgpool1(y)
-        # y = F.relu(self.conv10(y))
+        # x = F.relu(self.conv1(x))  # 32
+        # x = F.relu(self.conv2(x))  # 32
+        # x = self.avgpool1(x)  # 32
+        #
+        # # y = F.relu(self.conv2(x))
+        # x1 = F.relu(self.conv2(x))
+        #
+        # # Comment Temp
+        # c1 = torch.cat((x, x1), dim=1)  # 64
+        # x2 = F.relu(self.conv3(c1))  # 32
+        # y = torch.cat((x, x1, x2), dim=1)  # 96
+        # # downsizing
+        # y = F.relu(self.conv10(y))  # 24
+        # # y = self.avgpool1(y)
+        # # y = F.relu(self.conv10(y))
         x = x.view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))

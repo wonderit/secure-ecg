@@ -39,26 +39,28 @@ parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=10)
 parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=4e-3)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)#4e-4
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=30)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=10)
-parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=3)
+parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=4)
+parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
 
 args = parser.parse_args()
 MEAN = 59.3
 STD = 10.6
 _ = torch.manual_seed(args.seed)
 
-result_path = 'secure-result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}'.format(
+result_path = 'secure-result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}_mom{}'.format(
     args.model_type,
     args.loss_type,
     args.epochs,
     args.batch_size,
     args.n_train_items,
     args.n_test_items,
-    args.lr
+    args.lr,
+    args.momentum
 )
 
 import syft as sy  # import the Pysyft library
@@ -158,6 +160,7 @@ y = np.asarray(y_all)
 print(x.shape, y.shape)
 
 y = scale(y, MEAN, STD)
+x = scale(x, 1.66, 155.51)
 
 data = ECGDataset(x, y, transform=False)
 
@@ -400,24 +403,41 @@ class CANN(nn.Module):
     def __init__(self):
         super(CANN, self).__init__()
         self.kernel_size = 7
-        self.padding_size = 3
+        self.padding_size = 0
         self.channel_size = 6
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.fc1 = nn.Linear(186, 16)
+        self.fc1 = nn.Linear(2856, 16)
+        # self.fc1 = nn.Linear(150, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
 
+    # def forward(self, x):
+    #     x = F.relu(self.conv1(x))  # 32
+    #     # x = self.avgpool1(x)  # 32
+    #     y = F.relu(self.conv2(x))
+    #     # y = self.avgpool1(y)
+    #     y = F.relu(self.conv2(y))
+    #     # y = self.avgpool1(y)
+    #     y = F.relu(self.conv2(y))
+    #     # y = self.avgpool1(y)
+    #     y = y.view(y.shape[0], -1)
+    #     y = F.relu(self.fc1(y))
+    #     y = F.relu(self.fc2(y))
+    #     y = self.fc3(y)
+    #     return y
+
     def forward(self, x):
-        x = F.relu(self.conv1(x))  # 32
-        x = self.avgpool1(x)  # 32
+        x = self.conv1(x)  # 32
+        # x = self.avgpool1(x)  # 32
+        # y = F.relu(self.conv2(x))
         y = F.relu(self.conv2(x))
-        y = self.avgpool1(y)
+        # y = self.avgpool1(y)
+        y = self.conv2(y)
+        # y = self.avgpool1(y)
         y = F.relu(self.conv2(y))
-        y = self.avgpool1(y)
-        y = F.relu(self.conv2(y))
-        y = self.avgpool1(y)
+        # y = self.avgpool1(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
         y = F.relu(self.fc2(y))
@@ -427,7 +447,7 @@ class CANN(nn.Module):
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
-        self.fc1 = nn.Linear(12 * 500, 128)
+        self.fc1 = nn.Linear(3 * 500, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, 1)
 
@@ -548,7 +568,7 @@ def test(args, model, private_test_loader, epoch):
 
             if args.epochs == epoch:
                 pred_list.append(output.copy().get().float_precision().numpy()[:, 0])
-                target_list.append(target.copy().get().float_precision().numpy())
+                target_list.append(target.copy().get().float_precision().numpy()[:, 0])
 
     test_loss = test_loss.get().float_precision()
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
@@ -659,7 +679,8 @@ elif args.loss_type == 'lbfgs':
 elif args.loss_type == 'adadelta':
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)  # 4.58
 else:
-    optimizer = optim.SGD(model.parameters(), lr=args.lr)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+    # optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
 # optimizer = optim.SGD(model.parameters(), lr=args.lr)
 # optimizer = optim.Adam(model.parameters(), lr=args.lr)

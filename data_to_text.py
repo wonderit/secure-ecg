@@ -80,6 +80,8 @@ x = np.asarray(x_all)
 y = np.asarray(y_all)
 
 x = x.reshape(x.shape[0], -1)
+print(x.mean(), x.std())
+
 y = scale(y, MEAN, STD)
 
 print(x.shape, y.shape)
@@ -87,9 +89,8 @@ print(x.shape, y.shape)
 total_lengths = [args.n_train_items, args.n_test_items]
 indices = sample(range(sum(total_lengths)), args.n_test_items)
 train_x, test_x, train_y, test_y = train_test_split(x, y, test_size = args.n_test_items / sum(total_lengths))
-
 print(train_x.shape, train_y.shape, test_x.shape, test_y.shape)
-data_dir = '../data/ecg/text_demo'
+data_dir = '../data/ecg/text_demo_{}'.format(sum(total_lengths))
 
 if not os.path.exists(data_dir):
     os.makedirs(data_dir)
