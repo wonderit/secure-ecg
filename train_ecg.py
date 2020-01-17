@@ -408,10 +408,19 @@ class CANN(nn.Module):
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.fc1 = nn.Linear(2856, 16)
+
+        self.fc1 = nn.Linear(2928, 16)
         # self.fc1 = nn.Linear(150, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
+        # print (self.conv1.weight)
+        # nn.init.normal_(self.conv1.weight, 0, 0.1)
+        # print('after')
+        # print(self.conv1.weight)
+        # nn.init.normal_(self.conv2.weight, 0, 0.1)
+        # nn.init.normal_(self.fc1.weight, 0, 0.1)
+        # nn.init.normal_(self.fc2.weight, 0, 0.1)
+        # nn.init.normal_(self.fc3.weight, 0, 0.1)
 
     # def forward(self, x):
     #     x = F.relu(self.conv1(x))  # 32
@@ -429,14 +438,14 @@ class CANN(nn.Module):
     #     return y
 
     def forward(self, x):
-        x = self.conv1(x)  # 32
+        # x = self.conv1(x)  # 32
         # x = self.avgpool1(x)  # 32
         # y = F.relu(self.conv2(x))
+        x = F.relu(self.conv1(x))
+        # y = self.avgpool1(y)
+        # x = self.conv2(x)
+        # y = self.avgpool1(y)
         y = F.relu(self.conv2(x))
-        # y = self.avgpool1(y)
-        y = self.conv2(y)
-        # y = self.avgpool1(y)
-        y = F.relu(self.conv2(y))
         # y = self.avgpool1(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
@@ -679,8 +688,8 @@ elif args.loss_type == 'lbfgs':
 elif args.loss_type == 'adadelta':
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)  # 4.58
 else:
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
-    # optimizer = optim.SGD(model.parameters(), lr=args.lr)
+    # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
 # optimizer = optim.SGD(model.parameters(), lr=args.lr)
 # optimizer = optim.Adam(model.parameters(), lr=args.lr)
