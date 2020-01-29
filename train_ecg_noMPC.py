@@ -137,15 +137,23 @@ for hdf_file in hdf5_files:
         x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
 
         if args.model_type == 'cnn2d':
-            x_list = x_list.reshape(x_list.shape[0], x_list.shape[1], 1)
+            x_list = x_list.reshape(x_list.shape[0], 1, x_list.shape[1] )
+        #
+        # if args.model_type == 'cann':
+        #     x_list_tmp = np.empty([3, 500])
+        #     for i in range(500):
+        #         x_list_tmp[:, i] = x_list[:, i * 10]
+        #
+        #     x_list = x_list_tmp
 
     x_all.append(x_list)
+
 
 x = np.asarray(x_all)
 y = np.asarray(y_all)
 
 y = scale(y, MEAN, STD)
-# x = scale(x, 1.66, 155.51)
+x = scale(x, 1.547, 156.820)
 # x = scale(x, 15.9, 147.9)
 
 
@@ -158,58 +166,11 @@ class ECGDataset(Dataset):
     def __getitem__(self, index):
         x = self.data[index]
         y = self.target[index]
-        #
-        # TMAPS['ventricular-rate'] = TensorMap('VentricularRate', group='continuous',
-        #                                       channel_map={'VentricularRate': 0},
-        #                                       loss='logcosh', normalization={'mean': 59.3, 'std': 10.6})
-
-        # if self.transform:
-        #     x = x.reshape([12, 5000])
-        #     x = x.reshape([12, 12//12, 500, 5000 // 500]).mean(3).mean(1)
-        #     # print('x', x.shape, x[0, :9])
-        #     # plt.plot(x[4, :])
-        #     # plt.show()
-        #     # # x = s
-        #     # # print('s', s.shape, s[0, :3])
-        #     # plt.plot(x[4, :])
-        #     # plt.show()
-        #     # scaler = MinMaxScaler(feature_range=(-1, 1))
-        #     # x = scaler.fit_transform(x.numpy())
-        #     # x = torch.from_numpy(x)
-        #     # #
-        #     # # print('x', x.shape, x[0, :9])
-        #     #
-        #     #
-        #     # plt.plot(x[4, :])
-        #     # plt.show()
-        #
-        #     # exit()
 
         return x, y
 
     def __len__(self):
         return len(self.data)
-# print('x', x.shape, x[0, 0, :9])
-# plt.plot(x[4, 4, :])
-# plt.show()
-
-# scaler = NDStandardScaler()
-# x = scaler.fit_transform(x)
-# x = torch.from_numpy(x)
-
-
-# keepdims makes the result shape (1, 1, 3) instead of (3,). This doesn't matter here, but
-# would matter if you wanted to normalize over a different axis.
-
-# print('x', x.shape, x[0, 0, :9])
-# plt.plot(x[4, 4, :])
-# plt.show()
-
-# if args.compressed:
-#     data = ECGDataset(x, y, transform=True)
-# else:
-#     data = ECGDataset(x, y, transform=False) # 4.58
-
 data = ECGDataset(x, y, transform=False)
 # train_size = int(TRAIN_RATIO * len(data))
 # test_size = len(data) - train_size
@@ -291,10 +252,16 @@ class CANN(nn.Module):
         self.kernel_size = 7
         self.padding_size = 0
         self.channel_size = 6
-        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        # self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.fc1 = nn.Linear(2856, 16)
+        self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        # self.fc1 = nn.Linear(2856, 16)   # 4 layer of CNN
+        self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
+        # self.fc1 = nn.Linear(2928, 16)   # 2 layer of CNN
         # self.fc1 = nn.Linear(150, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
@@ -303,11 +270,12 @@ class CANN(nn.Module):
         x = self.conv1(x)  # 32
         # x = self.avgpool1(x)  # 32
         # y = F.relu(self.conv2(x))
-        y = F.relu(self.conv2(x))
+        x = F.relu(self.conv2(x))
         # y = self.avgpool1(y)
-        y = self.conv2(y)
+        # x = F.relu(self.conv2(x))
         # y = self.avgpool1(y)
-        y = F.relu(self.conv2(y))
+        # x = self.conv3(x)
+        y = F.relu(self.conv3(x))
         # y = self.avgpool1(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
@@ -413,6 +381,35 @@ class CNN_forMPC(nn.Module):
         y = self.fc3(y)
 
         return y
+
+
+class CNN2D_SHALLOW(nn.Module):
+    def __init__(self):
+        super(CNN2D_SHALLOW, self).__init__()
+        self.kernel_size = (1, 7)
+        self.padding_size = 0
+        self.channel_size = 6
+        self.conv1 = nn.Conv2d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv2d(6, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.fc1 = nn.Linear(2964, 16)
+        # self.fc1 = nn.Linear(2976, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+        # self.fc1 = nn.Linear(5620, 1)
+
+    def forward(self, x):
+        print('0', x.shape)
+        x = F.relu(self.conv1(x))
+        y = F.relu(self.conv2(x))  # 32
+        print('1', y.shape)
+        y = x.view(y.shape[0], -1)
+        print('1', y.shape) # 32
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+
+        return y
+
 
 class CNN2D_forMPC(nn.Module):
     def __init__(self):
@@ -722,14 +719,14 @@ if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann']:
     if args.model_type == 'shallow':
         model = CNN_forMPC()
     elif args.model_type == 'cnn2d':
-        model = CNN2D_forMPC()
+        model = CNN2D_SHALLOW()
     elif args.model_type == 'cann':
         model = CANN()
     else:
         model = ANN()
 
     if args.model_type == 'cnn2d':
-        summary(model, input_size=(12, 500, 1), batch_size=args.batch_size)
+        summary(model, input_size=(3, 500, 1), batch_size=args.batch_size)
     else:
         summary(model, input_size=(3, 500), batch_size=args.batch_size)
 else:

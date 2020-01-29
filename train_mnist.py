@@ -8,9 +8,9 @@ import time
 
 class Arguments():
     def __init__(self):
-        self.batch_size = 10
-        self.test_batch_size = 10
-        self.epochs = 10
+        self.batch_size = 64
+        self.test_batch_size = 64
+        self.epochs = 2
         self.lr = 0.02
         self.seed = 1
         self.log_interval = 1 # Log info at each batch
@@ -35,8 +35,8 @@ workers = connect_to_workers(n_workers=2)
 crypto_provider = connect_to_crypto_provider()
 
 # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-n_train_items = 100
-n_test_items = 100
+n_train_items = 640
+n_test_items = 640
 
 
 def get_private_data_loaders(precision_fractional, workers, crypto_provider):
@@ -77,7 +77,7 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
     )
 
     private_train_loader = [
-        (secret_share(data), secret_share(target))
+        (secret_share(data), secret_share(one_hot_of(target)))
         for i, (data, target) in enumerate(train_loader)
         if i < n_train_items / args.batch_size
     ]
@@ -88,7 +88,7 @@ def get_private_data_loaders(precision_fractional, workers, crypto_provider):
     )
 
     private_test_loader = [
-        (secret_share(data), secret_share(target))
+        (secret_share(data), secret_share(target.float()))
         for i, (data, target) in enumerate(test_loader)
         if i < n_test_items / args.test_batch_size
     ]
@@ -105,17 +105,18 @@ private_train_loader, private_test_loader = get_private_data_loaders(
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(391, 128)
+        self.fc1 = nn.Linear(782, 128)
         self.conv1d = nn.Conv1d(1, 1, 3)
-        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        # self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, 10)
 
     def forward(self, x):
         x = x.view(-1, 1, 28 * 28)
         x = F.relu(self.conv1d(x))
-        x = self.avgpool1(x)  # 32
+        # x = self.avgpool1(x)  # 32
         x = x.view(x.shape[0], -1)
+        print('x.shape', x.shape)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -132,8 +133,7 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # loss = F.nll_loss(output, target)  <-- not possible here
         batch_size = output.shape[0]
-        print(output.shape, target)
-        exit()
+        print(output.shape, target.shape)
         loss = ((output - target) ** 2).sum().refresh() / batch_size
 
         loss.backward()
@@ -164,7 +164,18 @@ def test(args, model, private_test_loader):
         correct.item(), len(private_test_loader) * args.test_batch_size,
                         100. * correct.item() / (len(private_test_loader) * args.test_batch_size)))
 
+
 model = Net()
+
+model.conv1d.weight = torch.nn.Parameter(torch.Tensor([[[-0.4767, 0.4538, -0.3564]]]))
+model.conv1d.bias = torch.nn.Parameter(torch.Tensor([-0.1246]))
+print('model start')
+print(model.conv1d.weight)
+print(model.conv1d.bias)
+print('fc 1 layer w,b')
+print(model.fc1.weight)
+print(model.fc1.bias)
+
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr)
@@ -174,3 +185,6 @@ optimizer = optimizer.fix_precision()
 for epoch in range(1, args.epochs + 1):
     train(args, model, private_train_loader, optimizer, epoch)
     test(args, model, private_test_loader)
+
+
+print(model.conv1d.weight.get().float_precision())

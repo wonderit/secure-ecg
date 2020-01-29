@@ -37,19 +37,24 @@ parser.add_argument("-c", "--compressed", help="Compress ecg data", action='stor
 parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, cann, pc, cnn2d)", type=str, default='cann')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
-parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=10)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)#4e-4
+parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=4)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=20)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=4e-4)#4e-4
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
-parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=30)
-parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=10)
-parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=3)
+parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=20)
+parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
+parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=5)
 parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
 
 args = parser.parse_args()
 MEAN = 59.3
 STD = 10.6
+
+# 5500 criteria
+mean_x = 1.547
+std_x = 156.820
+
 _ = torch.manual_seed(args.seed)
 
 result_path = 'secure-result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}_mom{}'.format(
@@ -160,7 +165,8 @@ y = np.asarray(y_all)
 print(x.shape, y.shape)
 
 y = scale(y, MEAN, STD)
-x = scale(x, 1.66, 155.51)
+# x = scale(x, 1.66, 155.51)
+x = scale(x, mean_x, std_x)
 
 data = ECGDataset(x, y, transform=False)
 
@@ -405,11 +411,15 @@ class CANN(nn.Module):
         self.kernel_size = 7
         self.padding_size = 0
         self.channel_size = 6
-        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        # self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
-        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
 
-        self.fc1 = nn.Linear(2928, 16)
+        self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
+        # self.fc1 = nn.Linear(2928, 16)
         # self.fc1 = nn.Linear(150, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
@@ -437,15 +447,17 @@ class CANN(nn.Module):
     #     y = self.fc3(y)
     #     return y
 
+
     def forward(self, x):
-        # x = self.conv1(x)  # 32
+        x = self.conv1(x)  # 32
         # x = self.avgpool1(x)  # 32
         # y = F.relu(self.conv2(x))
-        x = F.relu(self.conv1(x))
+        # x = F.relu(self.conv2(x))
         # y = self.avgpool1(y)
-        # x = self.conv2(x)
+        x = F.relu(self.conv2(x))
         # y = self.avgpool1(y)
-        y = F.relu(self.conv2(x))
+        # x = self.conv3(x)
+        y = F.relu(self.conv3(x))
         # y = self.avgpool1(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
@@ -582,7 +594,7 @@ def test(args, model, private_test_loader, epoch):
     test_loss = test_loss.get().float_precision()
     # print('Test set: Loss: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tTime: {:.3f}s'.format(batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
     #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
-    print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
+    # print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
 
     if args.epochs == epoch:
         target_list = np.array(target_list).reshape(-1)
@@ -674,6 +686,36 @@ else:
     model = ML4CVD()
     summary(model, input_size=(12, 5000), batch_size=args.batch_size)
 
+
+
+# TODO
+
+print('Save initial weight, bias start')
+# print(model.conv1.weight)
+# print(model.conv1.bias)
+def transform_array(torch_array) :
+    p = torch_array.detach().numpy()
+    p = p.reshape(6, -1)
+    p = np.transpose(p)
+    p = np.round_(p, 7)
+    return p
+
+# conv1_weight = transform_array(model.conv1.weight)
+# conv1_bias = transform_array(model.conv1.bias)
+# np.savetxt('cann_conv1_weight.txt', conv1_weight, fmt='%1.7f')
+# np.savetxt('cann_conv1_bias.txt', conv1_bias, fmt='%1.7f')
+
+# conv2_weight = transform_array(model.conv2.weight)
+# conv2_bias = transform_array(model.conv2.bias)
+# np.savetxt('cann_conv2_weight.txt', conv2_weight, fmt='%1.7f')
+# np.savetxt('cann_conv2_bias.txt', conv2_bias, fmt='%1.7f')
+#
+
+conv3_weight = transform_array(model.conv3.weight)
+conv3_bias = transform_array(model.conv3.bias)
+np.savetxt('cann_conv3_weight.txt', conv3_weight, fmt='%1.7f')
+np.savetxt('cann_conv3_bias.txt', conv3_bias, fmt='%1.7f')
+
 print('model sharing start')
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 print('model sharing end')
@@ -688,12 +730,14 @@ elif args.loss_type == 'lbfgs':
 elif args.loss_type == 'adadelta':
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)  # 4.58
 else:
-    # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+    # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, nesterov=True)
     optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
 # optimizer = optim.SGD(model.parameters(), lr=args.lr)
 # optimizer = optim.Adam(model.parameters(), lr=args.lr)
 optimizer = optimizer.fix_precision()
+
+
 
 for epoch in range(1, args.epochs + 1):
     train(args, model, private_train_loader, optimizer, epoch)
