@@ -545,7 +545,6 @@ def train(args, model, private_train_loader, optimizer, epoch):
 
         # print('data', data)
         # print('command', data.handle_func_command)
-
         output = model(data)
 
         # loss = F.nll_loss(output, target)  <-- not possible here

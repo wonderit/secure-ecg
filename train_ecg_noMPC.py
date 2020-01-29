@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = " "
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,7 +15,6 @@ import numpy as np
 from torchsummary import summary
 from sklearn.metrics import r2_score, mean_squared_error
 import math
-import os
 import argparse
 import time
 import pandas as pd
@@ -54,7 +56,7 @@ MEAN = 59.3
 STD = 10.6
 _ = torch.manual_seed(args.seed)
 
-result_path = 'result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}_mom{}'.format(
+result_path = os.path.join('result_torch', '{}_{}_ep{}_bs{}_{}-{}_lr{}_mom{}'.format(
     args.model_type,
     args.loss_type,
     args.epochs,
@@ -63,7 +65,7 @@ result_path = 'result_torch/{}_{}_ep{}_bs{}_{}:{}_lr{}_mom{}'.format(
     args.n_test_items,
     args.lr,
     args.momentum
-)
+))
 
 # import syft as sy  # import the Pysyft library
 # hook = sy.TorchHook(torch)  # hook PyTorch to add extra functionalities like Federated and Encrypted Learning
