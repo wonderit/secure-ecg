@@ -109,15 +109,16 @@ for f in glob.glob("{}/*.hd5".format(DATAPATH)):
 
 print('Data Loading finished (row:{})'.format(len(hdf5_files)))
 
-def scale(arr, std, mean):
-    arr -= mean
-    arr /= (std + 1e-7)
+def scale(arr, m, s):
+    arr = arr - m
+    arr = arr / (s + 1e-7)
     return arr
 
-def rescale(arr, std, mean):
-    arr = arr * std
-    arr = arr + mean
+# LOSS = 'hinge'
 
+def rescale(arr, m, s):
+    arr = arr * s
+    arr = arr + m
     return arr
 
 
@@ -259,25 +260,26 @@ class CANN(nn.Module):
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
                                padding=self.padding_size)
-        self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
-        # self.fc1 = nn.Linear(2856, 16)   # 4 layer of CNN
-        self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
-        # self.fc1 = nn.Linear(2928, 16)   # 2 layer of CNN
+        # self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+        #                        padding=self.padding_size)
+        # self.fc1 = nn.Linear(2856, 16)     # 4 layer of CNN
+        # self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
+        self.fc1 = nn.Linear(2928, 16)     # 2 layer of CNN
+        # self.fc1 = nn.Linear(2964, 16)     # 1 layer of CNN
         # self.fc1 = nn.Linear(150, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
 
     def forward(self, x):
-        x = self.conv1(x)  # 32
+        x = F.relu(self.conv1(x))  # 32
         # x = self.avgpool1(x)  # 32
-        # y = F.relu(self.conv2(x))
-        x = F.relu(self.conv2(x))
+        # x = F.relu(self.conv2(x))
+        # x = F.relu(self.conv2(x))
         # y = self.avgpool1(y)
         # x = F.relu(self.conv2(x))
         # y = self.avgpool1(y)
         # x = self.conv3(x)
-        y = F.relu(self.conv3(x))
+        y = F.relu(self.conv2(x))
         # y = self.avgpool1(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
@@ -716,6 +718,54 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
+def transform_array(torch_array, ):
+    p = torch_array.detach().numpy()
+    print('p:', p.shape, p.ndim)
+    # if conv1d
+    if p.ndim == 3:
+        p = p.reshape(p.shape[0], -1)
+    p = np.transpose(p)
+    p = np.round_(p, 7)
+    return p
+
+def save_model_to_txt(model, path):
+
+    conv1_weight = transform_array(model.conv1.weight)
+    conv1_bias = transform_array(model.conv1.bias)
+
+    conv2_weight = transform_array(model.conv2.weight)
+    conv2_bias = transform_array(model.conv2.bias)
+
+
+    conv3_weight = transform_array(model.conv3.weight)
+    conv3_bias = transform_array(model.conv3.bias)
+
+    fc1_weight = transform_array(model.fc1.weight)
+    fc1_bias = transform_array(model.fc1.bias)
+
+    fc2_weight = transform_array(model.fc2.weight)
+    fc2_bias = transform_array(model.fc2.bias)
+
+    fc3_weight = transform_array(model.fc3.weight)
+    fc3_bias = transform_array(model.fc3.bias)
+
+    np.savetxt('{}W0_final.txt'.format(path), conv1_weight, fmt='%1.7f')
+    np.savetxt('{}b0_final.txt'.format(path), conv1_bias, fmt='%1.7f')
+    np.savetxt('{}W1_final.txt'.format(path), conv2_weight, fmt='%1.7f')
+    np.savetxt('{}b1_final.txt'.format(path), conv2_bias, fmt='%1.7f')
+
+    np.savetxt('{}W2_final.txt'.format(path), conv3_weight, fmt='%1.7f')
+    np.savetxt('{}b2_final.txt'.format(path), conv3_bias, fmt='%1.7f')
+
+    np.savetxt('{}W3_final.txt'.format(path), fc1_weight, fmt='%1.7f')
+    np.savetxt('{}b3_final.txt'.format(path), fc1_bias, fmt='%1.7f')
+    np.savetxt('{}W4_final.txt'.format(path), fc2_weight, fmt='%1.7f')
+    np.savetxt('{}b4_final.txt'.format(path), fc2_bias, fmt='%1.7f')
+
+    np.savetxt('{}W5_final.txt'.format(path), fc3_weight, fmt='%1.7f')
+    np.savetxt('{}b5_final.txt'.format(path), fc3_bias, fmt='%1.7f')
+
+
 if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann']:
 
     if args.model_type == 'shallow':
@@ -763,3 +813,6 @@ for epoch in range(1, args.epochs + 1):
         os.makedirs('{}/{}'.format(result_path, 'models'))
     if epoch % args.log_interval == 0:
         save_model(model, "{}/models/ep{}.h5".format(result_path, epoch))
+        save_model_to_txt(model, "{}/models/".format(result_path))
+
+
