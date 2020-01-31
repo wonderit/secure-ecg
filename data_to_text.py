@@ -19,10 +19,6 @@ args = parser.parse_args()
 _ = torch.manual_seed(args.seed)
 MEAN = 59.3
 STD = 10.6
-def scale(arr, std, mean):
-    arr -= mean
-    arr /= (std + 1e-7)
-    return arr
 
 DATAPATH = '../data/ecg/raw/2019-11-19'
 ecg_key_string_list = [
@@ -50,14 +46,14 @@ for f in glob.glob("{}/*.hd5".format(DATAPATH)):
 
 print('Data Loading finished (row:{})'.format(len(hdf5_files)))
 
-def scale(arr, std, mean):
-    arr -= mean
-    arr /= (std + 1e-7)
+def scale(arr, m, s):
+    arr -= m
+    arr /= (s + 1e-7)
     return arr
 
-def rescale(arr, std, mean):
-    arr = arr * std
-    arr = arr + mean
+def rescale(arr, m, s):
+    arr = arr * s
+    arr = arr + m
 
     return arr
 
