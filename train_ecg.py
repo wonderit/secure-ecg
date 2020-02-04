@@ -109,15 +109,14 @@ for f in glob.glob("{}/*.hd5".format(DATAPATH)):
 
 print('Data Loading finished (row:{})'.format(len(hdf5_files)))
 
-def scale(arr, std, mean):
-    arr -= mean
-    arr /= (std + 1e-7)
+def scale(arr, m, s):
+    arr = arr - m
+    arr = arr / (s + 1e-7)
     return arr
 
-def rescale(arr, std, mean):
-    arr = arr * std
-    arr = arr + mean
-
+def rescale(arr, m, s):
+    arr = arr * s
+    arr = arr + m
     return arr
 
 class ECGDataset(Dataset):
@@ -151,7 +150,7 @@ for hdf_file in hdf5_files:
         x_list.append(x)
     x_list = np.stack(x_list)
     # x_list = x_list.reshape(12, -1)
-    if args.model_type in ['shallow', 'ann', 'cann', 'cnn2d']:
+    if args.model_type in ['shallow', 'ann', 'cann', 'cnn2d', 'cnnavg']:
         x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
 
         if args.model_type == 'cnn2d':
@@ -465,6 +464,52 @@ class CANN(nn.Module):
         y = self.fc3(y)
         return y
 
+
+class CNNAVG(nn.Module):
+    def __init__(self):
+        super(CNNAVG, self).__init__()
+        self.kernel_size = 7
+        self.padding_size = 0
+        self.channel_size = 6
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool3 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        # self.fc1 = nn.Linear(2856, 16)     # 4 layer of CNN
+        # self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
+        # self.fc1 = nn.Linear(1410, 16)     # 2 layer of CNN
+        # self.fc1 = nn.Linear(2964, 16)     # 1 layer of CNN
+        self.fc1 = nn.Linear(342, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = self.conv1(x)  # 32
+        x = self.avgpool1(x)  # 32
+        x = F.relu(self.conv2(x))
+        x = self.avgpool2(x)
+        y = F.relu(self.conv3(x))
+        # x = F.relu(self.conv4(x))
+        # x = self.avgpool3(x)
+        # x = self.conv3(x)
+        # y = F.relu(self.conv5(x))
+        y = self.avgpool4(y)
+        y = y.view(y.shape[0], -1)
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+        return y
+
+
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
@@ -666,7 +711,7 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
-if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann']:
+if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
 
     if args.model_type == 'shallow':
         model = CNN_forMPC()
@@ -674,6 +719,8 @@ if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann']:
         model = CNN2D_forMPC()
     elif args.model_type == 'cann':
         model = CANN()
+    elif args.model_type == 'cnnavg':
+        model = CNNAVG()
     else:
         model = ANN()
 
@@ -710,10 +757,10 @@ def transform_array(torch_array) :
 # np.savetxt('cann_conv2_bias.txt', conv2_bias, fmt='%1.7f')
 #
 
-conv3_weight = transform_array(model.conv3.weight)
-conv3_bias = transform_array(model.conv3.bias)
-np.savetxt('cann_conv3_weight.txt', conv3_weight, fmt='%1.7f')
-np.savetxt('cann_conv3_bias.txt', conv3_bias, fmt='%1.7f')
+# conv3_weight = transform_array(model.conv3.weight)
+# conv3_bias = transform_array(model.conv3.bias)
+# np.savetxt('cann_conv3_weight.txt', conv3_weight, fmt='%1.7f')
+# np.savetxt('cann_conv3_bias.txt', conv3_bias, fmt='%1.7f')
 
 print('model sharing start')
 model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)

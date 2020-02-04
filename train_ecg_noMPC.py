@@ -42,7 +42,7 @@ parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
 parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=4e-4)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
@@ -136,7 +136,7 @@ for hdf_file in hdf5_files:
         x_list.append(x)
     x_list = np.stack(x_list)
     # x_list = x_list.reshape(12, -1)
-    if args.model_type in ['shallow', 'ann', 'cann', 'cnn2d']:
+    if args.model_type in ['shallow', 'ann', 'cann', 'cnn2d', 'cnnavg']:
         x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
 
         if args.model_type == 'cnn2d':
@@ -287,6 +287,51 @@ class CANN(nn.Module):
         y = self.fc3(y)
         return y
 
+
+class CNNAVG(nn.Module):
+    def __init__(self):
+        super(CNNAVG, self).__init__()
+        self.kernel_size = 7
+        self.padding_size = 0
+        self.channel_size = 6
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool3 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        # self.fc1 = nn.Linear(2856, 16)     # 4 layer of CNN
+        # self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
+        # self.fc1 = nn.Linear(1410, 16)     # 2 layer of CNN
+        # self.fc1 = nn.Linear(2964, 16)     # 1 layer of CNN
+        self.fc1 = nn.Linear(342, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = self.conv1(x)  # 32
+        x = self.avgpool1(x)  # 32
+        x = F.relu(self.conv2(x))
+        x = self.avgpool2(x)
+        y = F.relu(self.conv3(x))
+        # x = F.relu(self.conv4(x))
+        # x = self.avgpool3(x)
+        # x = self.conv3(x)
+        # y = F.relu(self.conv5(x))
+        y = self.avgpool4(y)
+        y = y.view(y.shape[0], -1)
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+        return y
+
 class ANN(nn.Module):
     def __init__(self):
         super(ANN, self).__init__()
@@ -329,9 +374,12 @@ class CNN_forMPC(nn.Module):
         # self.channel_size = 32
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv22 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
         self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv4 = nn.Conv1d(self.channel_size * 3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv6 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv7 = nn.Conv1d(self.channel_size * 3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
@@ -350,7 +398,7 @@ class CNN_forMPC(nn.Module):
         x = self.avgpool1(x)  # 32
 
         # y = F.relu(self.conv2(x))
-        x1 = F.relu(self.conv2(x))
+        x1 = F.relu(self.conv22(x))
 
         # Comment Temp
         c1 = torch.cat((x, x1), dim=1)  # 64
@@ -358,7 +406,7 @@ class CNN_forMPC(nn.Module):
         y = torch.cat((x, x1, x2), dim=1)  # 96
         # downsizing
         y = F.relu(self.conv4(y))  # 24
-        y = self.avgpool1(y)
+        y = self.avgpool2(y)
 
         x3 = F.relu(self.conv5(y))
         c2 = torch.cat((y, x3), dim=1)
@@ -766,7 +814,7 @@ def save_model_to_txt(model, path):
     np.savetxt('{}b5_final.txt'.format(path), fc3_bias, fmt='%1.7f')
 
 
-if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann']:
+if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
 
     if args.model_type == 'shallow':
         model = CNN_forMPC()
@@ -774,6 +822,8 @@ if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann']:
         model = CNN2D_SHALLOW()
     elif args.model_type == 'cann':
         model = CANN()
+    elif args.model_type == 'cnnavg':
+        model = CNNAVG()
     else:
         model = ANN()
 
