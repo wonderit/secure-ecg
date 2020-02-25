@@ -6,19 +6,29 @@ import glob
 import h5py
 import numpy as np
 import argparse
+from scipy import stats
 import os
-from random import sample
 from sklearn.model_selection import train_test_split
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
-parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
-parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
+parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=5000)
+parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=500)
 
 args = parser.parse_args()
 _ = torch.manual_seed(args.seed)
+# for 5500
 MEAN = 59.3
 STD = 10.6
+# x mean, std:  1.4867225111111129 155.86417997666166
+# y mean, std:  61.906166666666664 10.701683448826586
+
+# x mean, std:  1.693 155.617
+# y mean, std:  61.6 9.8
+
+# for 22000
+# MEAN = 61.93
+# STD = 10.91
 
 DATAPATH = '../data/ecg/raw/2019-11-19'
 ecg_key_string_list = [
@@ -40,7 +50,7 @@ hdf5_files = []
 count = 0
 for f in glob.glob("{}/*.hd5".format(DATAPATH)):
     count += 1
-    if count > (args.n_train_items + args.n_test_items):
+    if count > (args.n_train_items + args.n_test_items * 2):
         break
     hdf5_files.append(f)
 
@@ -76,17 +86,28 @@ x = np.asarray(x_all)
 y = np.asarray(y_all)
 
 x = x.reshape(x.shape[0], -1)
-print(x.mean(), x.std())
 
-y = scale(y, MEAN, STD)
+zscore_of_y = np.abs(stats.zscore(y))
 
-print(x.shape, y.shape)
+x = x[np.where(zscore_of_y <= 3)]
+y = y[np.where(zscore_of_y <= 3)]
+
 
 total_lengths = [args.n_train_items, args.n_test_items]
-indices = sample(range(sum(total_lengths)), args.n_test_items)
+
+x = x[:sum(total_lengths), :]
+y = y[:sum(total_lengths)]
+
+
+print('x mean, std: ', np.round(x.mean(), 3), np.round(x.std(), 3))
+print('y mean, std: ', np.round(y.mean(), 1), np.round(y.std(), 1))
+print(x.shape, y.shape)
+y = scale(y, np.round(y.mean(), 1), np.round(y.std(), 1))
+
+# indices = sample(range(sum(total_lengths)), args.n_test_items)
 train_x, test_x, train_y, test_y = train_test_split(x, y, test_size = args.n_test_items / sum(total_lengths))
 print(train_x.shape, train_y.shape, test_x.shape, test_y.shape)
-data_dir = '../data/ecg/text_demo_{}'.format(sum(total_lengths))
+data_dir = '../data/ecg/text_demo_new_{}'.format(sum(total_lengths))
 
 if not os.path.exists(data_dir):
     os.makedirs(data_dir)

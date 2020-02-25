@@ -20,27 +20,12 @@ import argparse
 import time
 import pandas as pd
 import matplotlib.pyplot as plt
-#
-# class Arguments():
-#     def __init__(self):
-#         self.batch_size = 32
-#         self.epochs = 1
-#         self.lr = 1e-4   # 0.00002
-#         self.seed = 1234
-#         self.log_interval = 1  # Log info at each batch
-#         self.precision_fractional = 3
-#
-#         # We don't use the whole dataset for efficiency purpose, but feel free to increase these numbers
-#         self.n_train_items = 300
-#         self.n_test_items = 30
-#
-# args = Arguments()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--is_comet", help="Set is Comet", action='store_true')
-parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='cann')
+parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='cnnavg')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
-parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
+parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='adam')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
 parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)
@@ -49,8 +34,6 @@ parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, 
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
 parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
-# parser.add_argument("--mean", help="Set mean", type=float, default=59.3)
-# parser.add_argument("--std", help="Set std", type=float, default=10.6)
 
 args = parser.parse_args()
 
@@ -58,63 +41,6 @@ if args.is_comet:
     experiment = Experiment(api_key="eIskxE43gdgwOiTV27APVUQtB", project_name='secure-ecg', workspace="wonderit")
 else:
     experiment = None
-
-MEAN = 59.3
-STD = 10.6
-_ = torch.manual_seed(args.seed)
-
-result_path = os.path.join('result_torch', '{}_{}_ep{}_bs{}_{}-{}_lr{}_mom{}'.format(
-    args.model_type,
-    args.loss_type,
-    args.epochs,
-    args.batch_size,
-    args.n_train_items,
-    args.n_test_items,
-    args.lr,
-    args.momentum
-))
-
-# import syft as sy  # import the Pysyft library
-# hook = sy.TorchHook(torch)  # hook PyTorch to add extra functionalities like Federated and Encrypted Learning
-#
-# # simulation functions
-# def connect_to_workers(n_workers):
-#     return [
-#         sy.VirtualWorker(hook, id=f"worker{i+1}")
-#         for i in range(n_workers)
-#     ]
-# def connect_to_crypto_provider():
-#     return sy.VirtualWorker(hook, id="crypto_provider")
-#
-# workers = connect_to_workers(n_workers=2)
-# crypto_provider = connect_to_crypto_provider()
-
-
-DATAPATH = '../data/ecg/raw/2019-11-19'
-ecg_key_string_list = [
-    "strip_I",
-    "strip_II",
-    "strip_III",
-    # "strip_aVR",
-    # "strip_aVL",
-    # "strip_aVF",
-    # "strip_V1",
-    # "strip_V2",
-    # "strip_V3",
-    # "strip_V4",
-    # "strip_V5",
-    # "strip_V6",
-]
-
-hdf5_files = []
-count = 0
-for f in glob.glob("{}/*.hd5".format(DATAPATH)):
-    count += 1
-    if count > (args.n_train_items + args.n_test_items):
-        break
-    hdf5_files.append(f)
-
-print('Data Loading finished (row:{})'.format(len(hdf5_files)))
 
 def scale(arr, m, s):
     arr = arr - m
@@ -129,42 +55,78 @@ def rescale(arr, m, s):
     return arr
 
 
+# 5500 criteria
+# MEAN = 59.3
+# STD = 10.6
+# mean_x = 1.547
+# std_x = 156.820
+
+
+# 5500 new criteria
+MEAN = 61.6
+STD = 9.8
+mean_x = 1.693
+std_x = 155.617
+
+# x mean, std:  1.693 155.617
+# y mean, std:  61.6 9.8
+
+
+# 11000 criteria
+# MEAN = 61.5
+# STD = 9.9
+# mean_x = 1.784
+# std_x = 154.998
+
+# 22000 criteria
+# MEAN = 61.93
+# STD = 10.91
+# mean_x = 1.733
+# std_x = 156.279
+# mean_x = 1.914
+# std_x = 156.413
+
+_ = torch.manual_seed(args.seed)
+
+result_path = os.path.join('result_torch', 'text{}_{}_ep{}_bs{}_{}-{}_lr{}_mom{}'.format(
+    args.model_type,
+    args.loss_type,
+    args.epochs,
+    args.batch_size,
+    args.n_train_items,
+    args.n_test_items,
+    args.lr,
+    args.momentum
+))
+
+DATAPATH = '../data/ecg/text_demo_5500'
+train_file_suffix = 'train'
+test_file_suffix = 'test'
+
+file_name_train_x = 'X{}'.format(train_file_suffix)
+file_name_train_y = 'y{}'.format(train_file_suffix)
+file_name_test_x = 'X{}'.format(test_file_suffix)
+file_name_test_y = 'y{}'.format(test_file_suffix)
 
 print('Converting to TorchDataset...')
 
-x_all = []
-y_all = []
-for hdf_file in hdf5_files:
-    f = h5py.File(hdf_file, 'r')
-    y_all.append(f['continuous']['VentricularRate'][0])
-    x_list = list()
-    for (i, key) in enumerate(ecg_key_string_list):
-        x = f['ecg_rest'][key][:]
-        x_list.append(x)
-    x_list = np.stack(x_list)
-    # x_list = x_list.reshape(12, -1)
-    if args.model_type in ['shallow', 'ann', 'cann', 'cnn2d', 'cnnavg']:
-        x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
+train_x = np.loadtxt('{}/{}'.format(DATAPATH, file_name_train_x), delimiter=',')
+test_x = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_x), delimiter=',')
 
-        if args.model_type == 'cnn2d':
-            x_list = x_list.reshape(x_list.shape[0], 1, x_list.shape[1] )
-        #
-        # if args.model_type == 'cann':
-        #     x_list_tmp = np.empty([3, 500])
-        #     for i in range(500):
-        #         x_list_tmp[:, i] = x_list[:, i * 10]
-        #
-        #     x_list = x_list_tmp
+train_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_train_y), delimiter=',')
+test_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_y), delimiter=',')
 
-    x_all.append(x_list)
+train_x = train_x.reshape(train_x.shape[0], 3, 500)
+test_x = test_x.reshape(test_x.shape[0], 3, 500)
 
 
-x = np.asarray(x_all)
-y = np.asarray(y_all)
+# train_y = scale(train_y, MEAN, STD)
+# test_y = scale(test_y, MEAN, STD)
 
-y = scale(y, MEAN, STD)
-x = scale(x, 1.547, 156.820)
-# x = scale(x, 15.9, 147.9)
+print('train_x m, s: ', train_x.mean(), train_x.std())
+
+train_x = scale(train_x, mean_x, std_x)
+test_x = scale(test_x, mean_x, std_x)
 
 
 class ECGDataset(Dataset):
@@ -181,11 +143,10 @@ class ECGDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
-data = ECGDataset(x, y, transform=False)
-# train_size = int(TRAIN_RATIO * len(data))
-# test_size = len(data) - train_size
 
-train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
+# train_dataset, test_dataset = torch.utils.data.random_split(data, [args.n_train_items, args.n_test_items])
+train_dataset = ECGDataset(train_x, train_y, transform=False)
+test_dataset = ECGDataset(test_x, test_y, transform=False)
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
@@ -301,10 +262,10 @@ class CNNAVG(nn.Module):
         self.kernel_size = 7
         self.padding_size = 0
         self.channel_size = 6
-        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2, count_include_pad=False)
-        self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2, count_include_pad=False)
-        self.avgpool3 = nn.AvgPool1d(kernel_size=2, stride=2, count_include_pad=False)
-        self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2, count_include_pad=False)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool3 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
                                padding=self.padding_size)
@@ -733,8 +694,6 @@ def test(args, model, private_test_loader, epoch):
 
     if epoch % args.log_interval == 0:
         scatter_plot(target_list, pred_list, epoch, rm)
-    # if epoch == args.epochs:
-
 
 def scatter_plot(y_true, y_pred, epoch, message):
     result = np.column_stack((y_true,y_pred))
@@ -800,7 +759,7 @@ def transform_array(torch_array, ):
     p = np.round_(p, 7)
     return p
 
-def save_model_to_txt(model, path):
+def save_model_to_txt(model, path, ep):
 
     conv1_weight = transform_array(model.conv1.weight)
     conv1_bias = transform_array(model.conv1.bias)
@@ -821,21 +780,21 @@ def save_model_to_txt(model, path):
     fc3_weight = transform_array(model.fc3.weight)
     fc3_bias = transform_array(model.fc3.bias)
 
-    np.savetxt('{}W0_final.txt'.format(path), conv1_weight, fmt='%1.7f')
-    np.savetxt('{}b0_final.txt'.format(path), conv1_bias, fmt='%1.7f')
-    np.savetxt('{}W1_final.txt'.format(path), conv2_weight, fmt='%1.7f')
-    np.savetxt('{}b1_final.txt'.format(path), conv2_bias, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_W0.bin'.format(path, ep), conv1_weight, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_b0.bin'.format(path, ep), conv1_bias, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_W1.bin'.format(path, ep), conv2_weight, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_b1.bin'.format(path, ep), conv2_bias, fmt='%1.7f')
 
-    np.savetxt('{}W2_final.txt'.format(path), conv3_weight, fmt='%1.7f')
-    np.savetxt('{}b2_final.txt'.format(path), conv3_bias, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_W2.bin'.format(path, ep), conv3_weight, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_b2.bin'.format(path, ep), conv3_bias, fmt='%1.7f')
 
-    np.savetxt('{}W3_final.txt'.format(path), fc1_weight, fmt='%1.7f')
-    np.savetxt('{}b3_final.txt'.format(path), fc1_bias, fmt='%1.7f')
-    np.savetxt('{}W4_final.txt'.format(path), fc2_weight, fmt='%1.7f')
-    np.savetxt('{}b4_final.txt'.format(path), fc2_bias, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_W3.bin'.format(path, ep), fc1_weight, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_b3.bin'.format(path, ep), fc1_bias, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_W4.bin'.format(path, ep), fc2_weight, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_b4.bin'.format(path, ep), fc2_bias, fmt='%1.7f')
 
-    np.savetxt('{}W5_final.txt'.format(path), fc3_weight, fmt='%1.7f')
-    np.savetxt('{}b5_final.txt'.format(path), fc3_bias, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_W5.bin'.format(path, ep), fc3_weight, fmt='%1.7f')
+    np.savetxt('{}ecg_P1_{}_0_b5.bin'.format(path, ep), fc3_bias, fmt='%1.7f')
 
 
 if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
@@ -880,13 +839,17 @@ else:
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, nesterov=True)
 
 for epoch in range(1, args.epochs + 1):
-    train(args, model, train_loader, optimizer, epoch)
-    test(args, model, test_loader, epoch)
+
     # Save model
     if not os.path.exists('{}/{}'.format(result_path, 'models')):
         os.makedirs('{}/{}'.format(result_path, 'models'))
+
+    if epoch == 1:
+        save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
+    train(args, model, train_loader, optimizer, epoch)
+    test(args, model, test_loader, epoch)
     if epoch % args.log_interval == 0:
         save_model(model, "{}/models/ep{}.h5".format(result_path, epoch))
-        save_model_to_txt(model, "{}/models/".format(result_path))
+        save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
 
 
