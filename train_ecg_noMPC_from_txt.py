@@ -27,8 +27,9 @@ parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann,
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='adam')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=1)
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)
+parser.add_argument("-eps", "--eps", help="Set epsilon of adam", type=float, default=1e-7)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
@@ -88,9 +89,10 @@ std_x = 155.617
 
 _ = torch.manual_seed(args.seed)
 
-result_path = os.path.join('result_torch', 'text{}_{}_ep{}_bs{}_{}-{}_lr{}_mom{}'.format(
+result_path = os.path.join('result_torch', 'test_text_{}_{}_eps{}_ep{}_bs{}_{}-{}_lr{}_mom{}'.format(
     args.model_type,
     args.loss_type,
+    args.eps,
     args.epochs,
     args.batch_size,
     args.n_train_items,
@@ -125,8 +127,8 @@ test_x = test_x.reshape(test_x.shape[0], 3, 500)
 
 print('train_x m, s: ', train_x.mean(), train_x.std())
 
-train_x = scale(train_x, mean_x, std_x)
-test_x = scale(test_x, mean_x, std_x)
+# train_x = scale(train_x, mean_x, std_x)
+# test_x = scale(test_x, mean_x, std_x)
 
 
 class ECGDataset(Dataset):
@@ -265,23 +267,23 @@ class CNNAVG(nn.Module):
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.avgpool3 = nn.AvgPool1d(kernel_size=2, stride=2)
-        self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2)
+        # self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
                                padding=self.padding_size)
         self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
                                padding=self.padding_size)
-        self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
-        self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
+        # self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+        #                        padding=self.padding_size)
+        # self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+        #                        padding=self.padding_size)
         # self.fc1 = nn.Linear(2856, 16)     # 4 layer of CNN
         # self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
         # self.fc1 = nn.Linear(1410, 16)     # 2 layer of CNN
         # self.fc1 = nn.Linear(2964, 16)     # 1 layer of CNN
         self.fc1 = nn.Linear(342, 16)
-        self.fc2 = nn.Linear(16, 64)
-        self.fc3 = nn.Linear(64, 1)
+        self.fc2 = nn.Linear(16, 16)
+        self.fc3 = nn.Linear(16, 1)
 
     def forward(self, x):
         x = self.conv1(x)  # 32
@@ -293,11 +295,12 @@ class CNNAVG(nn.Module):
         # x = self.avgpool3(x)
         # x = self.conv3(x)
         # y = F.relu(self.conv5(x))
-        y = self.avgpool4(y)
+        y = self.avgpool3(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
         y = F.relu(self.fc2(y))
         y = self.fc3(y)
+        print('y', y.data)
         return y
 
 class ANN(nn.Module):
@@ -810,16 +813,18 @@ if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
     else:
         model = ANN()
 
-    if args.model_type == 'cnn2d':
-        summary(model, input_size=(3, 500, 1), batch_size=args.batch_size)
-    else:
-        summary(model, input_size=(3, 500), batch_size=args.batch_size)
+    # if args.model_type == 'cnn2d':
+    #     summary(model, input_size=(3, 500, 1), batch_size=args.batch_size)
+    # else:
+    #     summary(model, input_size=(3, 500), batch_size=args.batch_size)
 else:
     model = ML4CVD()
     summary(model, input_size=(12, 5000), batch_size=args.batch_size)
 
 print(model)
 
+# save_model_to_txt(model, "{}/models/".format(result_path), 0)
+# exit(0)
 # model = model.fix_precision().share(*workers, crypto_provider=crypto_provider, requires_grad=True)
 # for 12channel
 
@@ -828,7 +833,7 @@ print(model)
 # exit()
 
 if args.loss_type == 'adam':
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)  # 4.58
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, eps=args.eps)  # 4.58
 elif args.loss_type == 'asgd':
     optimizer = optim.ASGD(model.parameters(), lr=args.lr)  # 4.58
 elif args.loss_type == 'lbfgs':
