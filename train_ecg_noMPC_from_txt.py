@@ -31,6 +31,7 @@ parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, defau
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)
 parser.add_argument("-eps", "--eps", help="Set epsilon of adam", type=float, default=1e-7)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
+parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='raw')
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
@@ -38,6 +39,7 @@ parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, defau
 
 args = parser.parse_args()
 
+max_x = 0
 if args.is_comet:
     experiment = Experiment(api_key="eIskxE43gdgwOiTV27APVUQtB", project_name='secure-ecg', workspace="wonderit")
 else:
@@ -48,13 +50,40 @@ def scale(arr, m, s):
     arr = arr / (s + 1e-7)
     return arr
 
-# LOSS = 'hinge'
 
 def rescale(arr, m, s):
     arr = arr * s
     arr = arr + m
     return arr
 
+
+def scale_minmax(arr, min, max):
+    arr = (arr - min) / (max - min)
+    return arr
+
+
+def scale_maxabs(arr, maxabs):
+    arr = arr / maxabs
+    return arr
+
+
+def scale_robust(arr, q1, q3):
+    print('q1 : ', q1, 'q1 : ', q3)
+    arr = (arr - q1) / (q3-q1)
+    return arr
+
+
+def return_maxabs_min_max(arr, q1, q3):
+    print('q1 : ', q1, 'q1 : ', q3)
+    arr = (arr - q1) / (q3-q1)
+    return arr
+
+
+# def rescale_minmax(arr, min, max):
+#     arr = arr - m
+#     arr = arr / (s + 1e-7)
+#     return arr
+#
 
 # 5500 criteria
 # MEAN = 59.3
@@ -64,8 +93,11 @@ def rescale(arr, m, s):
 
 
 # 5500 new criteria
-MEAN = 61.6
-STD = 9.8
+# MEAN = 61.6
+# STD = 9.8
+# 5500 new criteria !!!
+MEAN = 61.4
+STD = 9.7
 mean_x = 1.693
 std_x = 155.617
 
@@ -89,7 +121,8 @@ std_x = 155.617
 
 _ = torch.manual_seed(args.seed)
 
-result_path = os.path.join('result_torch', 'test_text_{}_{}_eps{}_ep{}_bs{}_{}-{}_lr{}_mom{}'.format(
+result_path = os.path.join('result_torch', 'text_{}scaler_{}_{}_eps{}_ep{}_bs{}_{}-{}_lr{}_mom{}'.format(
+    args.scaler,
     args.model_type,
     args.loss_type,
     args.eps,
@@ -115,6 +148,8 @@ print('Converting to TorchDataset...')
 train_x = np.loadtxt('{}/{}'.format(DATAPATH, file_name_train_x), delimiter=',')
 test_x = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_x), delimiter=',')
 
+total_x = np.vstack((train_x, test_x))
+
 train_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_train_y), delimiter=',')
 test_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_y), delimiter=',')
 
@@ -124,12 +159,21 @@ test_x = test_x.reshape(test_x.shape[0], 3, 500)
 
 # train_y = scale(train_y, MEAN, STD)
 # test_y = scale(test_y, MEAN, STD)
-
-print('train_x m, s: ', train_x.mean(), train_x.std())
-
-# train_x = scale(train_x, mean_x, std_x)
-# test_x = scale(test_x, mean_x, std_x)
-
+#
+# print('train_x m, s: ', train_x.mean(), train_x.std())
+#
+# if args.scaler == 'minmax':
+#     train_x = scale_minmax(train_x, total_x.min(), total_x.max())
+#     test_x = scale_minmax(test_x, total_x.min(), total_x.max())
+# elif args.scaler == 'maxabs':
+#     train_x = scale_maxabs(train_x, np.max(np.abs(total_x)))
+#     test_x = scale_maxabs(test_x, np.max(np.abs(total_x)))
+# elif args.scaler == 'robust':
+#     train_x = scale_robust(train_x, np.quantile(total_x, 0.25), np.quantile(total_x, 0.75))
+#     test_x = scale_robust(test_x, np.quantile(total_x, 0.25), np.quantile(total_x, 0.75))
+# elif args.scaler == 'standard':
+#     train_x = scale(train_x, mean_x, std_x)
+#     test_x = scale(test_x, mean_x, std_x)
 
 class ECGDataset(Dataset):
     def __init__(self, data, target, transform=None):
@@ -284,13 +328,22 @@ class CNNAVG(nn.Module):
         self.fc1 = nn.Linear(342, 16)
         self.fc2 = nn.Linear(16, 16)
         self.fc3 = nn.Linear(16, 1)
+        self.max_x = max_x
 
     def forward(self, x):
         x = self.conv1(x)  # 32
+        if self.max_x < x.max():
+            self.max_x = x.max()
         x = self.avgpool1(x)  # 32
         x = F.relu(self.conv2(x))
+
+        if self.max_x < x.max():
+            self.max_x = x.max()
         x = self.avgpool2(x)
         y = F.relu(self.conv3(x))
+
+        if self.max_x < x.max():
+            self.max_x = x.max()
         # x = F.relu(self.conv4(x))
         # x = self.avgpool3(x)
         # x = self.conv3(x)
@@ -298,9 +351,16 @@ class CNNAVG(nn.Module):
         y = self.avgpool3(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
+
+        if self.max_x < y.max():
+            self.max_x = y.max()
         y = F.relu(self.fc2(y))
+
+        if self.max_x < y.max():
+            self.max_x = y.max()
         y = self.fc3(y)
-        print('y', y.data)
+
+        print('x_max', self.max_x)
         return y
 
 class ANN(nn.Module):
