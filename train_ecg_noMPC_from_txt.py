@@ -134,6 +134,11 @@ result_path = os.path.join('result_torch', 'text_{}scaler_{}_{}_eps{}_ep{}_bs{}_
     args.momentum
 ))
 
+
+
+batches = 5000 / args.batch_size
+log_batches = int(batches / args.log_interval)
+
 DATAPATH = '../data/ecg/text_demo_5500'
 train_file_suffix = 'train'
 test_file_suffix = 'test'
@@ -197,69 +202,6 @@ train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
 print('Torch Dataset Train/Test split finished...')
-
-def get_private_data_loaders(precision_fractional, workers, crypto_provider):
-    def one_hot_of(index_tensor):
-        """
-        Transform to one hot tensor
-
-        Example:
-            [0, 3, 9]
-            =>
-            [[1., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
-             [0., 0., 0., 1., 0., 0., 0., 0., 0., 0.],
-             [0., 0., 0., 0., 0., 0., 0., 0., 0., 1.]]
-
-        """
-        onehot_tensor = torch.zeros(*index_tensor.shape, 10)  # 10 classes for MNIST
-        onehot_tensor = onehot_tensor.scatter(1, index_tensor.view(-1, 1), 1)
-        return onehot_tensor
-
-    def secret_share(tensor):
-        """
-        Transform to fixed precision and secret share a tensor
-        """
-        return (
-            tensor
-                .fix_precision(precision_fractional=precision_fractional)
-                .share(*workers, crypto_provider=crypto_provider, requires_grad=True)
-        )
-
-    transformation = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
-
-    # train_loader = torch.utils.data.DataLoader(
-    #     datasets.MNIST('../data', train=True, download=True, transform=transformation),
-    #     batch_size=args.batch_size
-    # )
-
-    private_train_loader = [
-        (secret_share(data), secret_share(target))
-        for i, (data, target) in enumerate(train_loader)
-        if i < args.n_train_items / args.batch_size
-    ]
-
-    # test_loader = torch.utils.data.DataLoader(
-    #     datasets.MNIST('../data', train=False, download=True, transform=transformation),
-    #     batch_size=args.test_batch_size
-    # )
-
-    private_test_loader = [
-        (secret_share(data), secret_share(target.float()))
-        for i, (data, target) in enumerate(test_loader)
-        if i < args.n_test_items / args.batch_size
-    ]
-
-    return private_train_loader, private_test_loader
-
-#
-# private_train_loader, private_test_loader = get_private_data_loaders(
-#     precision_fractional=args.precision_fractional,
-#     workers=workers,
-#     crypto_provider=crypto_provider
-# )
 
 print('Data Sharing complete')
 
@@ -326,8 +268,8 @@ class CNNAVG(nn.Module):
         # self.fc1 = nn.Linear(1410, 16)     # 2 layer of CNN
         # self.fc1 = nn.Linear(2964, 16)     # 1 layer of CNN
         self.fc1 = nn.Linear(342, 16)
-        self.fc2 = nn.Linear(16, 16)
-        self.fc3 = nn.Linear(16, 1)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
         self.max_x = max_x
 
     def forward(self, x):
@@ -661,7 +603,37 @@ class ML4CVD(nn.Module):
 
         return y
 
-def train(args, model, private_train_loader, optimizer, epoch):
+
+
+def report_scores(X, y, trained_model):
+    y_true = []
+    y_pred = []
+    # y_score = []
+
+    # DON'T NORMALIZE X
+    # X = scale(X, mean_x, std_x)
+    print('Example : X - ', X[0, 0:3], 'y - ', y[0])
+    print(X.shape, y.shape)
+
+    # reshaped_X = X.reshape(X.shape[0], 3, 500)
+
+
+    with torch.no_grad():
+        scores = trained_model(torch.from_numpy(X).float())
+        #
+        # output rescale
+        scores = rescale(scores, MEAN, STD)
+        y = rescale(y, MEAN, STD)
+
+        mse_loss = mean_squared_error(y, scores)
+
+        y_true.extend(list(y))
+        y_pred.extend(scores)
+
+    return y_true, y_pred, mse_loss
+
+
+def train(args, model, private_train_loader, optimizer, epoch, test_loader):
     model.train()
     data_count = 0
     epoch_loss = 0
@@ -706,11 +678,18 @@ def train(args, model, private_train_loader, optimizer, epoch):
                 epoch, batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
                        100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
 
+            y_true_train, y_pred_train, train_mse_loss = report_scores(train_x, train_y, model)
 
-    if args.is_comet:
-        experiment.log_metric("train_mse", epoch_loss / data_count, epoch=epoch)
+            _, train_r2 = r_squared_mse(y_true_train, y_pred_train, train_mse_loss)
+            if args.is_comet:
+                experiment.log_metric("train_mse", train_mse_loss, epoch=epoch, step=log_batches * epoch + batch_idx)
+                experiment.log_metric("train_r2", train_r2, epoch=epoch, step=log_batches * epoch + batch_idx)
 
-def test(args, model, private_test_loader, epoch):
+            # test during training
+
+            test(args, model, test_loader, epoch, batch_idx, data_count)
+
+def test(args, model, private_test_loader, epoch, batch, step):
     model.eval()
     test_loss = 0
     data_count = 0
@@ -746,19 +725,23 @@ def test(args, model, private_test_loader, epoch):
     #            100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
     print('\nTest set: Loss: avg MSE ({:.4f})\tTime: {:.3f}s'.format(test_loss / data_count, time.time() - start_time))
 
-    if args.is_comet:
-        experiment.log_metric("test_mse", test_loss / data_count, epoch=epoch)
 
     # # output rescale
     # target_list = rescale(target_list, MEAN, STD)
     # pred_list = rescale(pred_list, MEAN, STD)
 
-    rm = r_squared_mse(target_list, pred_list)
+    rm, test_r2 = r_squared_mse(target_list, pred_list)
 
-    if epoch % args.log_interval == 0:
-        scatter_plot(target_list, pred_list, epoch, rm)
+    scatter_plot(target_list, pred_list, epoch, rm, batch)
 
-def scatter_plot(y_true, y_pred, epoch, message):
+
+    if args.is_comet:
+        experiment.log_metric("test_mse", test_loss / data_count, epoch=epoch, step=log_batches * epoch + batch)
+        experiment.log_metric("test_r2", test_r2, epoch=epoch, step=log_batches * epoch + batch)
+    # if epoch % args.log_interval == 0:
+    #     scatter_plot(target_list, pred_list, epoch, rm, batch)
+
+def scatter_plot(y_true, y_pred, epoch, message, batch):
     result = np.column_stack((y_true,y_pred))
 
     if not os.path.exists('{}/{}'.format(result_path, 'csv')):
@@ -776,9 +759,9 @@ def scatter_plot(y_true, y_pred, epoch, message):
     # plt.savefig("{}/scatter/{}.png".format(result_path, epoch))
 
     if args.is_comet:
-        experiment.log_figure(figure=plt, figure_name='{}.png'.format(epoch))
+        experiment.log_figure(figure=plt, figure_name='{}_{}.png'.format(epoch, batch))
     else:
-        plt.savefig("{}/scatter/{}.png".format(result_path, epoch))
+        plt.savefig("{}/scatter/{}_{}.png".format(result_path, epoch, batch))
     plt.clf()
     # plt.show()
 
@@ -786,9 +769,7 @@ def scatter_plot(y_true, y_pred, epoch, message):
 def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
 
     r2 = r2_score(y_true, y_pred, multioutput='uniform_average')
-    mse = mean_squared_error(y_true, y_pred,
-                             sample_weight=sample_weight,
-                             multioutput=multioutput)
+    mse = mean_squared_error(y_true, y_pred)
     # bounds_check = np.min(y_pred) > MIN_MOISTURE_BOUND
     # bounds_check = bounds_check&(np.max(y_pred) < MAX_MOISTURE_BOUND)
 
@@ -800,13 +781,10 @@ def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
     print('Scoring - MSE: ', mse, 'RMSE: ', math.sqrt(mse))
     print('Scoring - R2: ', r2)
     # print(y_pred)
-    # exit()
 
-    if args.is_comet:
-        experiment.log_metric("test_r2", r2)
 
     result_message = 'r2:{:.3f}, mse:{:.3f}, std:{:.3f},{:.3f}'.format(r2, mse, np.std(y_true), np.std(y_pred))
-    return result_message
+    return result_message, r2
 
 def save_model(model, path):
 
@@ -911,8 +889,8 @@ for epoch in range(1, args.epochs + 1):
 
     if epoch == 1:
         save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
-    train(args, model, train_loader, optimizer, epoch)
-    test(args, model, test_loader, epoch)
+    train(args, model, train_loader, optimizer, epoch, test_loader)
+    # test(args, model, test_loader, epoch)
     if epoch % args.log_interval == 0:
         save_model(model, "{}/models/ep{}.h5".format(result_path, epoch))
         save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
