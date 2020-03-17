@@ -8,12 +8,14 @@ import argparse
 import os
 from sklearn.model_selection import train_test_split
 from scipy import stats
+from biosppy.signals import tools as st
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=5000)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=500)
-parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='raw')
+parser.add_argument("-sc", "--scaler", help="Set scaler", type=str, default='fir')
 parser.add_argument("-x", "--is_remove_outlier_x", help="Set remove outlier x", action='store_true')
 parser.add_argument("-y", "--is_remove_outlier_y", help="Set remove outlier y", action='store_true')
 
@@ -62,7 +64,7 @@ def scale_minmax(arr, min, max):
 
 
 def scale_maxabs(arr, maxabs):
-    arr = arr / maxabs
+    arr = (arr / maxabs) * 1000
     return arr
 
 
@@ -82,22 +84,56 @@ x_all = []
 y_all = []
 for hdf_file in hdf5_files:
     f = h5py.File(hdf_file, 'r')
-    y_all.append(f['continuous']['VentricularRate'][0])
     x_list = list()
     for (i, key) in enumerate(ecg_key_string_list):
         x = f['ecg_rest'][key][:]
         x_list.append(x)
     x_list = np.stack(x_list)
     x_list = x_list.reshape([3, 12 // 12, 500, 5000 // 500]).mean(3).mean(1)
+
+    if (np.max(np.abs(x_list)) > 1000) and args.is_remove_outlier_x:
+        continue
+
+    if (f['continuous']['VentricularRate'][0] > 150 or f['continuous']['VentricularRate'][0] < 20) and args.is_remove_outlier_y:
+        continue
+
+    y_all.append(f['continuous']['VentricularRate'][0])
     x_all.append(x_list)
 
 x = np.asarray(x_all)
 y = np.asarray(y_all)
 
+
+# if args.is_remove_outlier_x:
+#     zscore_of_x = np.abs(stats.zscore(x))
+#     x_condition = np.copy(x)
+#     x_condition[np.where(zscore_of_x <= 3)] = 0
+#     x_condition[np.where(zscore_of_x > 3)] = 1
+#     x_condition = np.sum(x_condition, axis=1)
+#     x = x[np.where(x_condition == 0)]
+#     y = y[np.where(x_condition == 0)]
+#     print('train_x m, s: ', x.mean(), x.std())
+#     print('train_x min, max: ', x.min(), x.max())
+#     print('x_length : ', x.shape[0])
+
+# if args.is_remove_outlier_y:
+#     zscore_of_y = np.abs(stats.zscore(y))
+#     x = x[np.where(zscore_of_y <= 3)]
+#     y = y[np.where(zscore_of_y <= 3)]
+#     print('x_length : ', x.shape[0])
+
 for i in range(x.shape[1]):
     part_x = x[:, i, :]
     print('train_x m, s: ', part_x.mean(), part_x.std())
     print('train_x min, max: ', part_x.min(), part_x.max())
+
+    # ftype : str
+    #     Filter type:
+    #         * Finite Impulse Response filter ('FIR');
+    #         * Butterworth filter ('butter');
+    #         * Chebyshev filters ('cheby1', 'cheby2');
+    #         * Elliptic filter ('ellip');
+    #         * Bessel filter ('bessel').
 
     if args.scaler == 'minmax':
         part_x = scale_minmax(part_x, part_x.min(), part_x.max())
@@ -111,37 +147,44 @@ for i in range(x.shape[1]):
         part_x = scale_div(part_x, 10)
     elif args.scaler == 'div100':
         part_x = scale_div(part_x, 100)
+    elif args.scaler == 'fir':
+        order = int(0.3 * 100)
+        filtered, _, _ = st.filter_signal(signal=part_x,
+                                          ftype='FIR',
+                                          band='bandpass',
+                                          order=order,
+                                          frequency=[3, 45],
+                                          sampling_rate=100)
+        part_x = filtered
+        # part_x = scale_maxabs(part_x, np.max(np.abs(part_x)))
 
+
+    # plt.close()
+    # plt.plot(x[6000, i, :])
+    # plt.show()
 
     x[:, i, :] = part_x
+    #
+    # plt.close()
+    # plt.plot(x[6000, i, :])
+    # plt.show()
+    print('after filter')
+    print('train_x m, s: ', part_x.mean(), part_x.std())
+    print('train_x min, max: ', part_x.min(), part_x.max())
+    print('after filter')
 
 
 x = x.reshape(x.shape[0], -1)
 
-if args.is_remove_outlier_x:
-    zscore_of_x = np.abs(stats.zscore(x))
-    x_condition = np.copy(x)
-    x_condition[np.where(zscore_of_x <= 3)] = 0
-    x_condition[np.where(zscore_of_x > 3)] = 1
-    x_condition = np.sum(x_condition, axis=1)
-    x = x[np.where(x_condition == 0)]
-    y = y[np.where(x_condition == 0)]
-    print('train_x m, s: ', x.mean(), x.std())
-    print('train_x min, max: ', x.min(), x.max())
-    print('x_length : ', x.shape[0])
-
-if args.is_remove_outlier_y:
-    zscore_of_y = np.abs(stats.zscore(y))
-    x = x[np.where(zscore_of_y <= 3)]
-    y = y[np.where(zscore_of_y <= 3)]
-    print('x_length : ', x.shape[0])
 
 total_lengths = [args.n_train_items, args.n_test_items]
 
 x = x[:sum(total_lengths), :]
 y = y[:sum(total_lengths)]
 
-
+print('x m, s: ', x.mean(), x.std())
+print('x min, max: ', x.min(), x.max())
+print('x_length : ', x.shape[0])
 print('x mean, std: ', np.round(x.mean(), 3), np.round(x.std(), 3))
 print('y mean, std: ', np.round(y.mean(), 1), np.round(y.std(), 1))
 print(x.shape, y.shape)

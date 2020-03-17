@@ -31,7 +31,7 @@ parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, defau
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)
 parser.add_argument("-eps", "--eps", help="Set epsilon of adam", type=float, default=1e-7)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
-parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='raw')
+parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='fir')
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
@@ -96,10 +96,13 @@ def return_maxabs_min_max(arr, q1, q3):
 # MEAN = 61.6
 # STD = 9.8
 # 5500 new criteria !!!
-MEAN = 61.4
-STD = 9.7
-mean_x = 1.693
-std_x = 155.617
+# MEAN = 61.4
+# STD = 9.7
+
+MEAN = 61.9
+STD = 10.6
+# mean_x = 1.693
+# std_x = 155.617
 
 # x mean, std:  1.693 155.617
 # y mean, std:  61.6 9.8
@@ -270,22 +273,22 @@ class CNNAVG(nn.Module):
         self.fc1 = nn.Linear(342, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
-        self.max_x = max_x
+        # self.max_x = max_x
 
     def forward(self, x):
         x = self.conv1(x)  # 32
-        if self.max_x < x.max():
-            self.max_x = x.max()
+        # if self.max_x < x.max():
+        #     self.max_x = x.max()
         x = self.avgpool1(x)  # 32
         x = F.relu(self.conv2(x))
 
-        if self.max_x < x.max():
-            self.max_x = x.max()
+        # if self.max_x < x.max():
+        #     self.max_x = x.max()
         x = self.avgpool2(x)
         y = F.relu(self.conv3(x))
 
-        if self.max_x < x.max():
-            self.max_x = x.max()
+        # if self.max_x < x.max():
+        #     self.max_x = x.max()
         # x = F.relu(self.conv4(x))
         # x = self.avgpool3(x)
         # x = self.conv3(x)
@@ -294,15 +297,15 @@ class CNNAVG(nn.Module):
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
 
-        if self.max_x < y.max():
-            self.max_x = y.max()
+        # if self.max_x < y.max():
+        #     self.max_x = y.max()
         y = F.relu(self.fc2(y))
 
-        if self.max_x < y.max():
-            self.max_x = y.max()
+        # if self.max_x < y.max():
+        #     self.max_x = y.max()
         y = self.fc3(y)
 
-        print('x_max', self.max_x)
+        # print('x_max', self.max_x)
         return y
 
 class ANN(nn.Module):
@@ -612,8 +615,8 @@ def report_scores(X, y, trained_model):
 
     # DON'T NORMALIZE X
     # X = scale(X, mean_x, std_x)
-    print('Example : X - ', X[0, 0:3], 'y - ', y[0])
-    print(X.shape, y.shape)
+    # print('Example : X - ', X[0, 0:3], 'y - ', y[0])
+    # print(X.shape, y.shape)
 
     # reshaped_X = X.reshape(X.shape[0], 3, 500)
 
@@ -634,6 +637,7 @@ def report_scores(X, y, trained_model):
 
 
 def train(args, model, private_train_loader, optimizer, epoch, test_loader):
+    training_step = log_batches * (epoch-1)
     model.train()
     data_count = 0
     epoch_loss = 0
@@ -678,18 +682,17 @@ def train(args, model, private_train_loader, optimizer, epoch, test_loader):
                 epoch, batch_idx * args.batch_size, len(private_train_loader) * args.batch_size,
                        100. * batch_idx / len(private_train_loader), loss.item(), time.time() - start_time))
 
-            y_true_train, y_pred_train, train_mse_loss = report_scores(train_x, train_y, model)
-
-            _, train_r2 = r_squared_mse(y_true_train, y_pred_train, train_mse_loss)
             if args.is_comet:
-                experiment.log_metric("train_mse", train_mse_loss, epoch=epoch, step=log_batches * epoch + batch_idx)
-                experiment.log_metric("train_r2", train_r2, epoch=epoch, step=log_batches * epoch + batch_idx)
+                training_step = training_step + 1
+                y_true_train, y_pred_train, train_mse_loss = report_scores(train_x, train_y, model)
+                _, train_r2 = r_squared_mse(y_true_train, y_pred_train, train_mse_loss)
+                print('step : ', training_step)
+                experiment.log_metric("train_mse", train_mse_loss, epoch=epoch, step=training_step)
+                experiment.log_metric("train_r2", train_r2, epoch=epoch, step=training_step)
+                # test during training
+                test(args, model, test_loader, epoch, batch_idx, training_step)
 
-            # test during training
-
-            test(args, model, test_loader, epoch, batch_idx, data_count)
-
-def test(args, model, private_test_loader, epoch, batch, step):
+def test(args, model, private_test_loader, epoch, batch=999, step=0):
     model.eval()
     test_loss = 0
     data_count = 0
@@ -736,8 +739,9 @@ def test(args, model, private_test_loader, epoch, batch, step):
 
 
     if args.is_comet:
-        experiment.log_metric("test_mse", test_loss / data_count, epoch=epoch, step=log_batches * epoch + batch)
-        experiment.log_metric("test_r2", test_r2, epoch=epoch, step=log_batches * epoch + batch)
+        experiment.log_metric("test_mse", test_loss / data_count, epoch=epoch, step=step)
+        experiment.log_metric("test_r2", test_r2, epoch=epoch, step=step)
+
     # if epoch % args.log_interval == 0:
     #     scatter_plot(target_list, pred_list, epoch, rm, batch)
 
@@ -890,7 +894,7 @@ for epoch in range(1, args.epochs + 1):
     if epoch == 1:
         save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
     train(args, model, train_loader, optimizer, epoch, test_loader)
-    # test(args, model, test_loader, epoch)
+    test(args, model, test_loader, epoch, epoch * batches)
     if epoch % args.log_interval == 0:
         save_model(model, "{}/models/ep{}.h5".format(result_path, epoch))
         save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
