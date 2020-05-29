@@ -26,12 +26,12 @@ parser.add_argument("-c", "--is_comet", help="Set is Comet", action='store_true'
 parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='cnnavg')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='adam')
-parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=1)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=1)
+parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=3)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=20)
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)
 parser.add_argument("-eps", "--eps", help="Set epsilon of adam", type=float, default=1e-7)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
-parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='fir')
+parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='gb-removed-max64')
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
@@ -276,6 +276,7 @@ class CNNAVG(nn.Module):
         # self.max_x = max_x
 
     def forward(self, x):
+        k = x
         x = self.conv1(x)  # 32
         # if self.max_x < x.max():
         #     self.max_x = x.max()
@@ -883,7 +884,7 @@ elif args.loss_type == 'lbfgs':
 elif args.loss_type == 'adadelta':
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)  # 4.58
 else:
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, nesterov=True)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, nesterov=False)
 
 for epoch in range(1, args.epochs + 1):
 

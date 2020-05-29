@@ -62,9 +62,9 @@ def scale_minmax(arr, min, max):
     arr = (arr - min) / (max - min)
     return arr
 
-
+# 1000 to 1
 def scale_maxabs(arr, maxabs):
-    arr = (arr / maxabs) * 1000
+    arr = (arr / maxabs) * 64
     return arr
 
 
@@ -156,7 +156,8 @@ for i in range(x.shape[1]):
                                           frequency=[3, 45],
                                           sampling_rate=100)
         part_x = filtered
-        # part_x = scale_maxabs(part_x, np.max(np.abs(part_x)))
+        # maxabs added to filtered
+        part_x = scale_maxabs(part_x, np.max(np.abs(part_x)))
 
 
     # plt.close()
@@ -206,7 +207,8 @@ file_name_train_y = 'y{}'.format(train_file_suffix)
 file_name_test_x = 'X{}'.format(test_file_suffix)
 file_name_test_y = 'y{}'.format(test_file_suffix)
 
-np.savetxt('{}/{}'.format(data_dir, file_name_train_x), train_x, delimiter=',', fmt='%1.1f')
+# %1.1f
+np.savetxt('{}/{}'.format(data_dir, file_name_train_x), train_x, delimiter=',', fmt='%f')
 np.savetxt('{}/{}'.format(data_dir, file_name_train_y), train_y, delimiter='\n', fmt='%f')
-np.savetxt('{}/{}'.format(data_dir, file_name_test_x), test_x, delimiter=',', fmt='%1.1f')
+np.savetxt('{}/{}'.format(data_dir, file_name_test_x), test_x, delimiter=',', fmt='%f')
 np.savetxt('{}/{}'.format(data_dir, file_name_test_y), test_y, delimiter='\n', fmt='%f')
