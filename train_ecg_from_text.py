@@ -5,8 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset
-import glob
-import h5py
+from pytictoc import TicToc
 import numpy as np
 from torchsummary import summary
 from sklearn.metrics import r2_score, mean_squared_error
@@ -195,20 +194,77 @@ class CNNAVG(nn.Module):
         # self.max_x = max_x
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))  # 32
+        t = TicToc()
+        eta = 0
+
+        x = self.conv1(x)
+        t.tic()
+        x = F.relu(x)
+        eta = eta + t.tocvalue()
         x = self.avgpool1(x)  # 32
-        x = F.relu(self.conv2(x))
+
+        x = self.conv2(x)
+        t.tic()
+        x = F.relu(x)
+        eta = eta + t.tocvalue()
 
         x = self.avgpool2(x)
-        y = F.relu(self.conv3(x))
 
-        y = self.avgpool3(y)
+        x = self.conv3(x)
+        t.tic()
+        x = F.relu(x)
+        eta = eta + t.tocvalue()
+        print('eta of RELU : {:1.4f}'.format(eta))
+
+        y = self.avgpool3(x)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
-
         y = F.relu(self.fc2(y))
         y = self.fc3(y)
 
+        return y
+
+
+class CNNMAX(nn.Module):
+    def __init__(self):
+        super(CNNMAX, self).__init__()
+        self.kernel_size = 7
+        self.padding_size = 0
+        self.channel_size = 6
+        self.maxpool1 = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.maxpool2 = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.maxpool3 = nn.MaxPool1d(kernel_size=2, stride=2)
+        if args.cnn_padding == 'valid':
+            self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+            self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                                   padding=self.padding_size)
+            self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                                   padding=self.padding_size)
+            self.fc1 = nn.Linear(342, 16)
+        else:
+
+            self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size,
+                                   padding=(self.kernel_size // 2))
+            self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                                   padding=(self.kernel_size // 2))
+            self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                                   padding=(self.kernel_size // 2))
+            self.fc1 = nn.Linear(372, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))  # 32
+        x = self.maxpool1(x)  # 32
+        x = F.relu(self.conv2(x))
+        x = self.maxpool2(x)
+        y = F.relu(self.conv3(x))
+        y = self.maxpool3(y)
+        y = y.view(y.shape[0], -1)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
         return y
 
 def train(args, model, private_train_loader, optimizer, epoch):
@@ -352,6 +408,8 @@ if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
         model = CANN()
     elif args.model_type == 'cnnavg':
         model = CNNAVG()
+    elif args.model_type == 'cnnmax':
+        model = CNNMAX()
     else:
         model = ANN()
 
