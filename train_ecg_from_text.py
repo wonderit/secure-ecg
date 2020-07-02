@@ -196,6 +196,7 @@ class CNNAVG(nn.Module):
         # self.max_x = max_x
 
     def forward(self, x):
+        global eta_relu
 
         x = self.conv1(x)
         t_relu.tic()
