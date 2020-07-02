@@ -37,23 +37,23 @@ parser.add_argument("-c", "--compressed", help="Compress ecg data", action='stor
 parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, cann, pc, cnn2d)", type=str, default='cnnavg')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
-parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=4)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=10)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=4e-4)#4e-4
+parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=3)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-2)#4e-4
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
-parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=20)
-parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
+parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=5000)
+parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=500)
 parser.add_argument("-pf", "--precision_fractional", help="Set precision fractional", type=int, default=3)
 parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
 
 args = parser.parse_args()
-MEAN = 59.3
-STD = 10.6
+MEAN = 62.0
+STD = 11.0
 
 # 5500 criteria
-mean_x = 1.547
-std_x = 156.820
+# mean_x = 1.547
+# std_x = 156.820
 
 _ = torch.manual_seed(args.seed)
 
@@ -183,27 +183,19 @@ class CNNAVG(nn.Module):
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.avgpool3 = nn.AvgPool1d(kernel_size=2, stride=2)
-        # self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2)
-        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
+                               padding=(self.kernel_size // 2))
         self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
-        # self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-        #                        padding=self.padding_size)
-        # self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-        #                        padding=self.padding_size)
-        # self.fc1 = nn.Linear(2856, 16)     # 4 layer of CNN
-        # self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
-        # self.fc1 = nn.Linear(1410, 16)     # 2 layer of CNN
-        # self.fc1 = nn.Linear(2964, 16)     # 1 layer of CNN
-        self.fc1 = nn.Linear(342, 16)
+                               padding=(self.kernel_size // 2))
+        self.fc1 = nn.Linear(372, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
         # self.max_x = max_x
 
     def forward(self, x):
-        x = self.conv1(x)  # 32
+        x = F.relu(self.conv1(x))  # 32
         x = self.avgpool1(x)  # 32
         x = F.relu(self.conv2(x))
 
@@ -235,10 +227,11 @@ def train(args, model, private_train_loader, optimizer, epoch):
         # Reshape
         # output = output.view(batch_size, -1)
         # target = target.view(batch_size, -1)
-        target = target.view(target.shape[0], 1)
+        # target = target.view(target.shape[0], 1)
         # loss = ((output - target) ** 2).sum()
         loss = ((output - target) ** 2).sum().refresh() / batch_size
         # loss = ((output - target) ** 2).sum() / batch_size
+        # loss = (output - target).sum() / batch_size
 
         loss.backward()
 
@@ -375,7 +368,7 @@ else:
 # TODO
 
 print('Save initial weight, bias start')
-exit()
+# exit()
 # print(model.conv1.weight)
 # print(model.conv1.bias)
 def transform_array(torch_array) :

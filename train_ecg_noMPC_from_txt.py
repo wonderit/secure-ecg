@@ -27,11 +27,11 @@ parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann,
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='adam')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=3)
-parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=20)
-parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-3)
+parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, default=32)
+parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-2)
 parser.add_argument("-eps", "--eps", help="Set epsilon of adam", type=float, default=1e-7)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
-parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='gb-removed-max64')
+parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='max100')
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
@@ -100,7 +100,10 @@ def return_maxabs_min_max(arr, q1, q3):
 # STD = 9.7
 
 MEAN = 61.9
-STD = 10.6
+STD = 10.8
+#
+# MEAN = 62.0
+# STD = 11.0
 # mean_x = 1.693
 # std_x = 155.617
 
@@ -256,57 +259,31 @@ class CNNAVG(nn.Module):
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.avgpool2 = nn.AvgPool1d(kernel_size=2, stride=2)
         self.avgpool3 = nn.AvgPool1d(kernel_size=2, stride=2)
-        # self.avgpool4 = nn.AvgPool1d(kernel_size=2, stride=2)
-        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
+                               padding=(self.kernel_size // 2))
         self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                               padding=self.padding_size)
-        # self.conv4 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-        #                        padding=self.padding_size)
-        # self.conv5 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-        #                        padding=self.padding_size)
-        # self.fc1 = nn.Linear(2856, 16)     # 4 layer of CNN
-        # self.fc1 = nn.Linear(2892, 16)     # 3 layer of CNN
-        # self.fc1 = nn.Linear(1410, 16)     # 2 layer of CNN
-        # self.fc1 = nn.Linear(2964, 16)     # 1 layer of CNN
-        self.fc1 = nn.Linear(342, 16)
+                               padding=(self.kernel_size // 2))
+        self.fc1 = nn.Linear(372, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
         # self.max_x = max_x
 
     def forward(self, x):
-        k = x
-        x = self.conv1(x)  # 32
-        # if self.max_x < x.max():
-        #     self.max_x = x.max()
+        x = F.relu(self.conv1(x))  # 32
         x = self.avgpool1(x)  # 32
         x = F.relu(self.conv2(x))
-
-        # if self.max_x < x.max():
-        #     self.max_x = x.max()
         x = self.avgpool2(x)
         y = F.relu(self.conv3(x))
 
-        # if self.max_x < x.max():
-        #     self.max_x = x.max()
-        # x = F.relu(self.conv4(x))
-        # x = self.avgpool3(x)
-        # x = self.conv3(x)
-        # y = F.relu(self.conv5(x))
         y = self.avgpool3(y)
         y = y.view(y.shape[0], -1)
         y = F.relu(self.fc1(y))
 
-        # if self.max_x < y.max():
-        #     self.max_x = y.max()
         y = F.relu(self.fc2(y))
 
-        # if self.max_x < y.max():
-        #     self.max_x = y.max()
         y = self.fc3(y)
-
-        # print('x_max', self.max_x)
         return y
 
 class ANN(nn.Module):
@@ -884,7 +861,7 @@ elif args.loss_type == 'lbfgs':
 elif args.loss_type == 'adadelta':
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)  # 4.58
 else:
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, nesterov=False)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, nesterov=True)
 
 for epoch in range(1, args.epochs + 1):
 
