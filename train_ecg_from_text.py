@@ -171,7 +171,9 @@ private_train_loader, private_test_loader = get_private_data_loaders(
 
 print('Data Sharing complete')
 
-
+t_relu = TicToc()
+t_all = TicToc()
+eta_relu = 0
 
 class CNNAVG(nn.Module):
     def __init__(self):
@@ -194,27 +196,25 @@ class CNNAVG(nn.Module):
         # self.max_x = max_x
 
     def forward(self, x):
-        t = TicToc()
-        eta = 0
 
         x = self.conv1(x)
-        t.tic()
+        t_relu.tic()
         x = F.relu(x)
-        eta = eta + t.tocvalue()
+        eta_relu = eta_relu + t_relu.tocvalue()
         x = self.avgpool1(x)  # 32
 
         x = self.conv2(x)
-        t.tic()
+        t_relu.tic()
         x = F.relu(x)
-        eta = eta + t.tocvalue()
+        eta_relu = eta_relu + t_relu.tocvalue()
 
         x = self.avgpool2(x)
 
         x = self.conv3(x)
-        t.tic()
+        t_relu.tic()
         x = F.relu(x)
-        eta = eta + t.tocvalue()
-        print('eta of RELU : {:1.4f}'.format(eta))
+        eta_relu = eta_relu + t_relu.tocvalue()
+        print('eta of RELU : {:1.4f}'.format(eta_relu))
 
         y = self.avgpool3(x)
         y = y.view(y.shape[0], -1)
@@ -476,6 +476,9 @@ optimizer = optimizer.fix_precision()
 
 
 for epoch in range(1, args.epochs + 1):
+    t_all.tic()
     train(args, model, private_train_loader, optimizer, epoch)
+    t_all.toc()
+    print('ETA_RELU: {:1.4f}'.format(eta_relu))
     test(args, model, private_test_loader, epoch)
     # save_model(model, 'secure-models/model.h5')
