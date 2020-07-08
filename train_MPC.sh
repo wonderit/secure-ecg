@@ -1,1 +1,1 @@
-nohup /home/wonsuk/projects/secure-ecg/train_ecg.py -tr 50 -te 50 -b 20 -e 1 -lr 1e-3 -mom 0 > mpc_output.log &
+nohup train_ecg_from_text.py -m ML4CVD > mpc_output.log &
