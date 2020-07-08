@@ -1,17 +1,19 @@
 # Data split
 import torch
 import syft as sy
-from syft.frameworks.torch.crypto.securenn import (
+from syft.frameworks.torch.mpc.securenn import (
     private_compare,
     decompose,
     share_convert,
     relu_deriv,
     msb
 )
+from pytictoc import TicToc
+import numpy as np
 
 # Set everything up
 hook = sy.TorchHook(torch)
-L = 2 ** 62
+L = 2 ** 64
 
 alice = sy.VirtualWorker(id="alice", hook=hook)
 bob = sy.VirtualWorker(id="bob", hook=hook)
@@ -25,8 +27,8 @@ james = sy.VirtualWorker(id="james", hook=hook)
 # t = test_beta_sh.get()
 # t = t.float_precision()
 # print(t)
-x_bit_sh = decompose(torch.LongTensor([13])).share(alice, bob, crypto_provider=james, field=67).child
-r = torch.LongTensor([12]).send(alice, bob).child
+# x_bit_sh = decompose(torch.LongTensor([13])).share(alice, bob, crypto_provider=james, field=67).child
+# r = torch.LongTensor([12]).send(alice, bob).child
 
 # beta = torch.LongTensor([1]).send(alice, bob).child
 # beta_p = private_compare(x_bit_sh, r, beta)
@@ -92,8 +94,24 @@ This is a light test as share_convert is not used for the moment
 # res = share_convert(x_bit_sh)
 # assert res.field == L - 1
 # assert (res.get() % L == torch.LongTensor([13, 3567, 2 ** 60])).all()
+array_size = 100000
 
-x_sh = torch.tensor([10, -1, -3]).share(alice, bob, crypto_provider=james, field=L).child
+np_array = np.zeros(array_size)
+
+t_relu = TicToc()
+t_mult = TicToc()
+
+x_sh = torch.tensor(np_array).share(alice, bob, crypto_provider=james, field=L).child
+y_sh = torch.tensor(np_array).share(alice, bob, crypto_provider=james, field=L).child
+
+t_mult.tic()
+z_sh = x_sh * y_sh
+t_mult.toc()
+
+print('z : {}'.format(z_sh.get()))
+t_relu.tic()
 r = relu_deriv(x_sh)
+t_relu.toc()
+print('r : {}'.format(r.get()))
 
-assert (r.get() == torch.tensor([1, 0, 0])).all()
+# assert (r.get() == torch.tensor([1, 0, 0])).all()
