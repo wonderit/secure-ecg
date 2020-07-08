@@ -77,3 +77,4 @@ data/
 *.log
 *.out
 splitted_data/**
+/PySyft/

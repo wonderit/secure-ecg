@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--compressed", help="Compress ecg data", action='store_true')
-parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, cann, pc, cnn2d)", type=str, default='cnnavg')
+parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, cann, pc, cnn2d, ML4CVD)", type=str, default='cnnmax')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=3)
@@ -47,8 +47,8 @@ parser.add_argument("-pf", "--precision_fractional", help="Set precision fractio
 parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
 
 args = parser.parse_args()
-MEAN = 62.0
-STD = 11.0
+MEAN = 61.9
+STD = 10.9
 
 # 5500 criteria
 # mean_x = 1.547
@@ -87,6 +87,8 @@ batches = 5000 / args.batch_size
 log_batches = int(batches / args.log_interval)
 
 DATAPATH = '../data/ecg/text_demo_5500'
+if args.model_type == 'ML4CVD':
+    DATAPATH = '../data/ecg/text_original_5500'
 train_file_suffix = 'train'
 test_file_suffix = 'test'
 
@@ -103,8 +105,12 @@ test_x = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_x), delimiter=',')
 train_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_train_y), delimiter=',')
 test_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_y), delimiter=',')
 
-train_x = train_x.reshape(train_x.shape[0], 3, 500)
-test_x = test_x.reshape(test_x.shape[0], 3, 500)
+if args.model_type == 'ML4CVD':
+    train_x = train_x.reshape(train_x.shape[0], 12, 5000)
+    test_x = test_x.reshape(test_x.shape[0], 12, 5000)
+else:
+    train_x = train_x.reshape(train_x.shape[0], 3, 500)
+    test_x = test_x.reshape(test_x.shape[0], 3, 500)
 
 class ECGDataset(Dataset):
     def __init__(self, data, target, transform=None):
@@ -226,42 +232,178 @@ class CNNAVG(nn.Module):
         return y
 
 
+class ML4CVD(nn.Module):
+    def __init__(self):
+        super(ML4CVD, self).__init__()
+        self.kernel_size = 71
+        self.padding_size = 35
+        self.channel_size = 32
+        self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv22 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
+        self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv4 = nn.Conv1d(self.channel_size * 3, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
+        self.conv5 = nn.Conv1d(24, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv6 = nn.Conv1d(48, 24, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv7 = nn.Conv1d(72, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv8 = nn.Conv1d(16, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv9 = nn.Conv1d(32, 16, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.fc1 = nn.Linear(30000, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+        # self.fc1 = nn.Linear(5620, 1)
+
+    def forward(self, x):
+        global eta_relu
+        x = self.conv1(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        x = self.avgpool1(x)  # 32
+
+        x = self.conv2(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        x = F.max_pool1d(x, 2, 2)
+        x = self.conv3(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+        y = F.max_pool1d(x, 2, 2)
+        y = y.view(x.shape[0], -1)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+        return y
+    def forward(self, x):
+        global eta_relu
+        x = self.conv1(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        x = self.conv2(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        x = self.avgpool1(x)  # 32
+
+        x1 = self.conv22(x)
+        t_relu.tic()
+        x1 = F.relu(x1)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+        c1 = torch.cat((x, x1), dim=1)  # 64
+        x2 = self.conv3(c1)
+        t_relu.tic()
+        x2 = F.relu(x2)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+        # y = F.relu(self.conv4(y))  # 24
+        y = torch.cat((x, x1, x2), dim=1)  # 96
+        # downsizing
+        y = self.conv4(y)
+        t_relu.tic()
+        y = F.relu(y)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+        y = self.avgpool1(y)
+
+        # x3 = F.relu(self.conv5(y))
+
+        x3 = self.conv5(y)
+        t_relu.tic()
+        x3 = F.relu(x3)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+        c2 = torch.cat((y, x3), dim=1)
+
+        # x4 = F.relu(self.conv6(c2))
+        x4 = self.conv6(c2)
+        t_relu.tic()
+        x4 = F.relu(x4)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+        y = torch.cat((y, x3, x4), dim=1)
+
+        # y = F.relu(self.conv7(y))
+        y = self.conv7(y)
+        t_relu.tic()
+        y = F.relu(y)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        y = self.avgpool1(y)
+
+        # x5 = F.relu(self.conv8(y))
+        x5 = self.conv8(y)
+        t_relu.tic()
+        x5 = F.relu(x5)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+
+        c3 = torch.cat((y, x5), dim=1)
+
+
+        # x6 = F.relu(self.conv9(c3))
+        x6 = self.conv9(c3)
+        t_relu.tic()
+        x6 = F.relu(x6)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        y = torch.cat((y, x5, x6), dim=1)
+
+        # Flatten
+        y = y.view(y.size(0), -1)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
+        y = self.fc3(y)
+
+        return y
+
+
+
 class CNNMAX(nn.Module):
     def __init__(self):
         super(CNNMAX, self).__init__()
         self.kernel_size = 7
         self.padding_size = 0
         self.channel_size = 6
-        self.maxpool1 = nn.MaxPool1d(kernel_size=2, stride=2)
-        self.maxpool2 = nn.MaxPool1d(kernel_size=2, stride=2)
-        self.maxpool3 = nn.MaxPool1d(kernel_size=2, stride=2)
-        if args.cnn_padding == 'valid':
-            self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
-            self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                                   padding=self.padding_size)
-            self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                                   padding=self.padding_size)
-            self.fc1 = nn.Linear(342, 16)
-        else:
+        # self.maxpool1 = nn.MaxPool1d(kernel_size=2, stride=2)
+        # self.maxpool2 = nn.MaxPool1d(kernel_size=2, stride=2)
+        # self.maxpool3 = nn.MaxPool1d(kernel_size=2, stride=2)
 
-            self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size,
-                                   padding=(self.kernel_size // 2))
-            self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                                   padding=(self.kernel_size // 2))
-            self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
-                                   padding=(self.kernel_size // 2))
-            self.fc1 = nn.Linear(372, 16)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
+        self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
+        self.fc1 = nn.Linear(372, 16)
         self.fc2 = nn.Linear(16, 64)
         self.fc3 = nn.Linear(64, 1)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))  # 32
-        x = self.maxpool1(x)  # 32
-        x = F.relu(self.conv2(x))
-        x = self.maxpool2(x)
-        y = F.relu(self.conv3(x))
-        y = self.maxpool3(y)
-        y = y.view(y.shape[0], -1)
+        global eta_relu
+        x = self.conv1(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        x = F.max_pool1d(x, 2, 2)
+        x = self.conv2(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+        x = F.max_pool1d(x, 2, 2)
+        x = self.conv3(x)
+        t_relu.tic()
+        x = F.relu(x)
+        eta_relu = eta_relu + t_relu.tocvalue()
+
+        y = F.max_pool1d(x, 2, 2)
+        y = y.view(x.shape[0], -1)
 
         y = F.relu(self.fc1(y))
         y = F.relu(self.fc2(y))
@@ -399,7 +541,7 @@ def save_model(model, path):
 
     torch.save(model.state_dict(), path)
 
-if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
+if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg', 'cnnmax']:
 
     if args.model_type == 'shallow':
         model = CNN_forMPC()

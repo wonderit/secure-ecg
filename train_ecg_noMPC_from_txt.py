@@ -9,9 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset
-from torchvision import transforms
-import glob
-import h5py
+from scipy import stats
 import numpy as np
 from torchsummary import summary
 from sklearn.metrics import r2_score, mean_squared_error
@@ -31,8 +29,8 @@ parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, defau
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-2)
 parser.add_argument("-eps", "--eps", help="Set epsilon of adam", type=float, default=1e-7)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
-parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='max100')
-parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=1)
+parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='max30')
+parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=5)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
 parser.add_argument("-mom", "--momentum", help="Set momentum", type=float, default=0.9)
@@ -100,7 +98,7 @@ def return_maxabs_min_max(arr, q1, q3):
 # STD = 9.7
 
 MEAN = 61.9
-STD = 10.8
+STD = 10.9
 #
 # MEAN = 62.0
 # STD = 11.0
@@ -167,6 +165,7 @@ test_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_y), delimiter=',')
 train_x = train_x.reshape(train_x.shape[0], 3, 500)
 test_x = test_x.reshape(test_x.shape[0], 3, 500)
 
+result_array = []
 
 # train_y = scale(train_y, MEAN, STD)
 # test_y = scale(test_y, MEAN, STD)
@@ -283,6 +282,40 @@ class CNNAVG(nn.Module):
 
         y = F.relu(self.fc2(y))
 
+        y = self.fc3(y)
+        return y
+
+
+class CNNMAX(nn.Module):
+    def __init__(self):
+        super(CNNMAX, self).__init__()
+        self.kernel_size = 7
+        self.padding_size = 0
+        self.channel_size = 6
+        self.maxpool1 = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.maxpool2 = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.maxpool3 = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.conv1 = nn.Conv1d(3, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
+        self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
+        self.conv3 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=(self.kernel_size // 2))
+        self.fc1 = nn.Linear(372, 16)
+        self.fc2 = nn.Linear(16, 64)
+        self.fc3 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))  # 32
+        x = self.maxpool1(x)  # 32
+        x = F.relu(self.conv2(x))
+        x = self.maxpool2(x)
+        y = F.relu(self.conv3(x))
+        y = self.maxpool3(y)
+        y = y.view(y.shape[0], -1)
+
+        y = F.relu(self.fc1(y))
+        y = F.relu(self.fc2(y))
         y = self.fc3(y)
         return y
 
@@ -537,6 +570,8 @@ class ML4CVD(nn.Module):
         self.channel_size = 32
         self.conv1 = nn.Conv1d(12, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv2 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
+        self.conv22 = nn.Conv1d(self.channel_size, self.channel_size, kernel_size=self.kernel_size,
+                               padding=self.padding_size)
         self.conv3 = nn.Conv1d(self.channel_size * 2, self.channel_size, kernel_size=self.kernel_size, padding=self.padding_size)
         self.conv4 = nn.Conv1d(self.channel_size * 3, 24, kernel_size=self.kernel_size, padding=self.padding_size)
         self.avgpool1 = nn.AvgPool1d(kernel_size=2, stride=2)
@@ -554,7 +589,7 @@ class ML4CVD(nn.Module):
         x = F.relu(self.conv1(x))  # 32
         x = F.relu(self.conv2(x))  # 32
         x = self.avgpool1(x)  # 32
-        x1 = F.relu(self.conv2(x))
+        x1 = F.relu(self.conv22(x))
         c1 = torch.cat((x, x1), dim=1)  # 64
         x2 = F.relu(self.conv3(c1))  # 32
         y = torch.cat((x, x1, x2), dim=1)  # 96
@@ -663,12 +698,13 @@ def train(args, model, private_train_loader, optimizer, epoch, test_loader):
             if args.is_comet:
                 training_step = training_step + 1
                 y_true_train, y_pred_train, train_mse_loss = report_scores(train_x, train_y, model)
-                _, train_r2 = r_squared_mse(y_true_train, y_pred_train, train_mse_loss)
+                _, train_r = r_mse(y_true_train, y_pred_train, train_mse_loss)
                 print('step : ', training_step)
                 experiment.log_metric("train_mse", train_mse_loss, epoch=epoch, step=training_step)
-                experiment.log_metric("train_r2", train_r2, epoch=epoch, step=training_step)
-                # test during training
-                test(args, model, test_loader, epoch, batch_idx, training_step)
+                experiment.log_metric("train_r", train_r, epoch=epoch, step=training_step)
+
+            # test during training
+            test(args, model, test_loader, epoch, batch_idx, training_step)
 
 def test(args, model, private_test_loader, epoch, batch=999, step=0):
     model.eval()
@@ -711,14 +747,22 @@ def test(args, model, private_test_loader, epoch, batch=999, step=0):
     # target_list = rescale(target_list, MEAN, STD)
     # pred_list = rescale(pred_list, MEAN, STD)
 
-    rm, test_r2 = r_squared_mse(target_list, pred_list)
+    rm, test_r = r_mse(target_list, pred_list)
 
-    scatter_plot(target_list, pred_list, epoch, rm, batch)
+    if batch % 155 == 0:
+        scatter_plot(target_list, pred_list, epoch, rm, batch)
 
 
     if args.is_comet:
         experiment.log_metric("test_mse", test_loss / data_count, epoch=epoch, step=step)
-        experiment.log_metric("test_r2", test_r2, epoch=epoch, step=step)
+        experiment.log_metric("test_r", test_r, epoch=epoch, step=step)
+
+    if batch % args.log_interval == 0:
+        result = dict()
+        result['mse_test'] = test_loss.numpy() / data_count
+        result['r_test'] = test_r
+        result_array.append(result)
+
 
     # if epoch % args.log_interval == 0:
     #     scatter_plot(target_list, pred_list, epoch, rm, batch)
@@ -734,26 +778,48 @@ def scatter_plot(y_true, y_pred, epoch, message, batch):
 
     pd.DataFrame(result).to_csv("{}/csv/{}.csv".format(result_path, epoch), index=False)
 
-    plt.scatter(y_pred, y_true, s=3)
+    import matplotlib.lines as mlines
+    fig, ax = plt.subplots()
+    line = mlines.Line2D([0, 1], [0, 1], color='red')
+
+    ax.scatter(y_pred, y_true, s=3)
+
+    transform = ax.transAxes
+    line.set_transform(transform)
+    ax.add_line(line)
+
     plt.suptitle(message)
     plt.xlabel('Predictions')
     plt.ylabel('Actual')
+    # set axes range
+    plt.xlim(30, 110)
+    plt.ylim(30, 110)
+
     # plt.savefig("{}/scatter/{}.png".format(result_path, epoch))
 
     if args.is_comet:
         experiment.log_figure(figure=plt, figure_name='{}_{}.png'.format(epoch, batch))
     else:
-        plt.savefig("{}/scatter/{}_{}.png".format(result_path, epoch, batch))
+        plt.savefig("{}/scatter/{}_{}.png".format(result_path, epoch, batch), dpi=600)
     plt.clf()
     # plt.show()
 
 
-def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
 
-    r2 = r2_score(y_true, y_pred, multioutput='uniform_average')
+def r_mse(y_true, y_pred, sample_weight=None, multioutput=None):
+
+    # r2 = r2_score(y_true, y_pred, multioutput='uniform_average')
     mse = mean_squared_error(y_true, y_pred)
     # bounds_check = np.min(y_pred) > MIN_MOISTURE_BOUND
     # bounds_check = bounds_check&(np.max(y_pred) < MAX_MOISTURE_BOUND)
+
+    y_true = np.array(y_true, dtype=np.float)
+    y_true = y_true.flatten()
+    y_pred = np.array(y_pred, dtype=np.float)
+    y_pred = y_pred.flatten()
+
+    r = stats.pearsonr(y_true, y_pred)[0]
+    r2 = r**2
 
     print('Scoring - std', np.std(y_true), np.std(y_pred))
     print('Scoring - median', np.median(y_true), np.median(y_pred))
@@ -765,8 +831,8 @@ def r_squared_mse(y_true, y_pred, sample_weight=None, multioutput=None):
     # print(y_pred)
 
 
-    result_message = 'r2:{:.3f}, mse:{:.3f}, std:{:.3f},{:.3f}'.format(r2, mse, np.std(y_true), np.std(y_pred))
-    return result_message, r2
+    result_message = 'r:{:.3f}, mse:{:.3f}, std:{:.3f},{:.3f}'.format(r, mse, np.std(y_true), np.std(y_pred))
+    return result_message, r
 
 def save_model(model, path):
 
@@ -820,7 +886,7 @@ def save_model_to_txt(model, path, ep):
     np.savetxt('{}ecg_P1_{}_0_b5.bin'.format(path, ep), fc3_bias, fmt='%1.7f')
 
 
-if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
+if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg', 'cnnmax']:
 
     if args.model_type == 'shallow':
         model = CNN_forMPC()
@@ -830,6 +896,8 @@ if args.model_type in ['shallow', 'ann', 'cnn2d', 'cann', 'cnnavg']:
         model = CANN()
     elif args.model_type == 'cnnavg':
         model = CNNAVG()
+    elif args.model_type == 'cnnmax':
+        model = CNNMAX()
     else:
         model = ANN()
 
@@ -872,9 +940,21 @@ for epoch in range(1, args.epochs + 1):
     if epoch == 1:
         save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
     train(args, model, train_loader, optimizer, epoch, test_loader)
-    test(args, model, test_loader, epoch, epoch * batches)
+    # test(args, model, test_loader, epoch, epoch * batches)
     if epoch % args.log_interval == 0:
         save_model(model, "{}/models/ep{}.h5".format(result_path, epoch))
         save_model_to_txt(model, "{}/models/".format(result_path), epoch-1)
 
 
+
+import csv
+csv_file = "result_plaintext_{}_{}.csv".format(args.model_type, args.loss_type)
+csv_columns = ['mse_test', 'r_test']
+try:
+    with open(csv_file, 'w') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=csv_columns)
+        writer.writeheader()
+        for data in result_array:
+            writer.writerow(data)
+except IOError:
+    print("I/O error")
