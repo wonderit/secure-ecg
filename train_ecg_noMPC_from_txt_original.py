@@ -162,28 +162,11 @@ total_x = np.vstack((train_x, test_x))
 train_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_train_y), delimiter=',')
 test_y = np.loadtxt('{}/{}'.format(DATAPATH, file_name_test_y), delimiter=',')
 
-train_x = train_x.reshape(train_x.shape[0], 3, 500)
-test_x = test_x.reshape(test_x.shape[0], 3, 500)
+train_x = train_x.reshape(train_x.shape[0], 12, 5000)
+test_x = test_x.reshape(test_x.shape[0], 12, 5000)
 
 result_array = []
 
-# train_y = scale(train_y, MEAN, STD)
-# test_y = scale(test_y, MEAN, STD)
-#
-# print('train_x m, s: ', train_x.mean(), train_x.std())
-#
-# if args.scaler == 'minmax':
-#     train_x = scale_minmax(train_x, total_x.min(), total_x.max())
-#     test_x = scale_minmax(test_x, total_x.min(), total_x.max())
-# elif args.scaler == 'maxabs':
-#     train_x = scale_maxabs(train_x, np.max(np.abs(total_x)))
-#     test_x = scale_maxabs(test_x, np.max(np.abs(total_x)))
-# elif args.scaler == 'robust':
-#     train_x = scale_robust(train_x, np.quantile(total_x, 0.25), np.quantile(total_x, 0.75))
-#     test_x = scale_robust(test_x, np.quantile(total_x, 0.25), np.quantile(total_x, 0.75))
-# elif args.scaler == 'standard':
-#     train_x = scale(train_x, mean_x, std_x)
-#     test_x = scale(test_x, mean_x, std_x)
 
 class ECGDataset(Dataset):
     def __init__(self, data, target, transform=None):
