@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--is_comet", help="Set is Comet", action='store_true')
-parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='cnnavg')
+parser.add_argument("-m", "--model_type", help="model name(shallow, normal, ann, mpc, cnn2d)", type=str, default='ml4cvd')
 parser.add_argument("-mpc", "--mpc", help="shallow model", action='store_true')
 parser.add_argument("-lt", "--loss_type", help="use sgd as optimizer", type=str, default='sgd')
 parser.add_argument("-e", "--epochs", help="Set epochs", type=int, default=3)
@@ -29,7 +29,7 @@ parser.add_argument("-b", "--batch_size", help="Set batch size", type=int, defau
 parser.add_argument("-lr", "--lr", help="Set learning rate", type=float, default=1e-2)
 parser.add_argument("-eps", "--eps", help="Set epsilon of adam", type=float, default=1e-7)
 parser.add_argument("-s", "--seed", help="Set random seed", type=int, default=1234)
-parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='max30_sgd_baseline')
+parser.add_argument("-sc", "--scaler", help="Set random seed", type=str, default='max30_original')
 parser.add_argument("-li", "--log_interval", help="Set log interval", type=int, default=5)
 parser.add_argument("-tr", "--n_train_items", help="Set log interval", type=int, default=80)
 parser.add_argument("-te", "--n_test_items", help="Set log interval", type=int, default=20)
@@ -143,7 +143,7 @@ result_path = os.path.join('result_torch', 'text_{}scaler_{}_{}_eps{}_ep{}_bs{}_
 batches = int(5000 / args.batch_size)
 log_batches = int(batches / args.log_interval)
 
-DATAPATH = '../data/ecg/text_demo_5500'
+DATAPATH = '../data/ecg/text_original_5500'
 train_file_suffix = 'train'
 test_file_suffix = 'test'
 
