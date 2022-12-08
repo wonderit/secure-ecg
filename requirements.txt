@@ -7,7 +7,7 @@ bidict==0.19.0
 biosppy==0.6.1
 bleach==3.1.4
 cachetools==3.1.1
-certifi==2019.11.28
+certifi==2022.12.7
 chardet==3.0.4
 Click==7.0
 comet-git-pure==0.19.16
